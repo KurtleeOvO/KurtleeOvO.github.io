@@ -2,13 +2,14 @@ import Key from "../i18nKey";
 import type { Translation } from "../translation";
 
 export const en: Translation = {
-	[Key.home]: "Home",
-	[Key.about]: "About",
-	[Key.archive]: "Archive",
+	[Key.home]: "首页",
+	[Key.about]: "简介",
+	[Key.archive]: "博客",
+	[Key.portfolio]: "作品集",
 	[Key.search]: "Search",
 
-	[Key.tags]: "Tags",
-	[Key.categories]: "Categories",
+	[Key.tags]: "标签",
+	[Key.categories]: "目录",
 	[Key.recentPosts]: "Recent Posts",
 
 	[Key.comments]: "Comments",
@@ -21,8 +22,8 @@ export const en: Translation = {
 	[Key.wordsCount]: "words",
 	[Key.minuteCount]: "minute",
 	[Key.minutesCount]: "minutes",
-	[Key.postCount]: "post",
-	[Key.postsCount]: "posts",
+	[Key.postCount]: "篇文章",
+	[Key.postsCount]: "篇文章",
 
 	[Key.themeColor]: "Theme Color",
 

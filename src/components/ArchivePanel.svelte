@@ -89,7 +89,7 @@ onMount(async () => {
     {#each groups as group}
         <div>
             <div class="flex flex-row w-full items-center h-[3.75rem]">
-                <div class="w-[15%] md:w-[10%] transition text-2xl font-bold text-right text-75">
+                <div class="w-[15%] md:w-[10%] transition text-xl font-bold text-right text-75">
                     {group.year}
                 </div>
                 <div class="w-[15%] md:w-[10%]">
@@ -111,7 +111,7 @@ onMount(async () => {
                 >
                     <div class="flex flex-row justify-start items-center h-full">
                         <!-- date -->
-                        <div class="w-[15%] md:w-[10%] transition text-sm text-right text-50">
+                        <div class="w-[15%] md:w-[10%] transition text-xs text-right text-50">
                             {formatDate(post.data.published)}
                         </div>
 

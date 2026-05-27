@@ -2,9 +2,15 @@
 import I18nKey from "@i18n/i18nKey";
 import { i18n } from "@i18n/translation";
 import Icon from "@iconify/svelte";
-import { url } from "@utils/url-utils.ts";
 import { onMount } from "svelte";
 import type { SearchResult } from "@/global";
+
+interface SearchIndexItem {
+	title: string;
+	description: string;
+	tags: string[];
+	url: string;
+}
 
 let keywordDesktop = "";
 let keywordMobile = "";
@@ -12,24 +18,53 @@ let result: SearchResult[] = [];
 let isSearching = false;
 let pagefindLoaded = false;
 let initialized = false;
+let searchIndex: SearchIndexItem[] = [];
+let indexLoaded = false;
 
-const fakeResult: SearchResult[] = [
-	{
-		url: url("/"),
-		meta: {
-			title: "This Is a Fake Search Result",
-		},
-		excerpt:
-			"Because the search cannot work in the <mark>dev</mark> environment.",
-	},
-	{
-		url: url("/"),
-		meta: {
-			title: "If You Want to Test the Search",
-		},
-		excerpt: "Try running <mark>npm build && npm preview</mark> instead.",
-	},
-];
+const highlightMatch = (text: string, keyword: string): string => {
+	if (!keyword || !text) return text;
+	const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+	const regex = new RegExp(`(${escaped})`, "gi");
+	return text.replace(regex, "<mark>$1</mark>");
+};
+
+const devSearch = (keyword: string): SearchResult[] => {
+	const kw = keyword.toLowerCase().trim();
+	if (!kw) return [];
+	const parts = kw.split(/\s+/);
+	return searchIndex
+		.filter((item) => {
+			const title = item.title.toLowerCase();
+			const desc = item.description.toLowerCase();
+			const tags = item.tags.map((t) => t.toLowerCase()).join(" ");
+			return parts.every(
+				(p) => title.includes(p) || desc.includes(p) || tags.includes(p),
+			);
+		})
+		.slice(0, 10)
+		.map((item) => ({
+			url: item.url,
+			meta: { title: item.title },
+			excerpt: item.description
+				? highlightMatch(item.description, keyword)
+				: item.tags.length > 0
+					? `Tags: ${item.tags.join(", ")}`
+					: "",
+		}));
+};
+
+const loadSearchIndex = async () => {
+	if (indexLoaded) return;
+	try {
+		const resp = await fetch("/api/search-data.json");
+		if (resp.ok) {
+			searchIndex = await resp.json();
+			indexLoaded = true;
+		}
+	} catch (e) {
+		console.error("Failed to load search index:", e);
+	}
+};
 
 const togglePanel = () => {
 	const panel = document.getElementById("search-panel");
@@ -69,10 +104,10 @@ const search = async (keyword: string, isDesktop: boolean): Promise<void> => {
 				response.results.map((item) => item.data()),
 			);
 		} else if (import.meta.env.DEV) {
-			searchResults = fakeResult;
+			if (!indexLoaded) await loadSearchIndex();
+			searchResults = devSearch(keyword);
 		} else {
 			searchResults = [];
-			console.error("Pagefind is not available in production environment.");
 		}
 
 		result = searchResults;
@@ -93,35 +128,25 @@ onMount(() => {
 			typeof window !== "undefined" &&
 			!!window.pagefind &&
 			typeof window.pagefind.search === "function";
-		console.log("Pagefind status on init:", pagefindLoaded);
 		if (keywordDesktop) search(keywordDesktop, true);
 		if (keywordMobile) search(keywordMobile, false);
 	};
 
 	if (import.meta.env.DEV) {
-		console.log(
-			"Pagefind is not available in development mode. Using mock data.",
-		);
-		initializeSearch();
+		loadSearchIndex().then(() => initializeSearch());
 	} else {
 		document.addEventListener("pagefindready", () => {
-			console.log("Pagefind ready event received.");
 			initializeSearch();
 		});
 		document.addEventListener("pagefindloaderror", () => {
-			console.warn(
-				"Pagefind load error event received. Search functionality will be limited.",
-			);
-			initializeSearch(); // Initialize with pagefindLoaded as false
+			initializeSearch();
 		});
 
-		// Fallback in case events are not caught or pagefind is already loaded by the time this script runs
 		setTimeout(() => {
 			if (!initialized) {
-				console.log("Fallback: Initializing search after timeout.");
 				initializeSearch();
 			}
-		}, 2000); // Adjust timeout as needed
+		}, 2000);
 	}
 });
 

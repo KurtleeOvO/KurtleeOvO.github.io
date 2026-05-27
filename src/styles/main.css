@@ -2,7 +2,9 @@
 
 @layer components {
     .card-base {
-        @apply rounded-[var(--radius-large)] overflow-hidden bg-[var(--card-bg)] transition;
+        @apply rounded-none overflow-hidden bg-[var(--card-bg)] transition;
+        border: 3px solid var(--line-color);
+        box-shadow: 6px 6px 0 rgba(0,0,0,0.15);
     }
     h1, h2, h3, h4, h5, h6, p, a, span, li, ul, ol, blockquote, code, pre, table, th, td, strong {
         @apply transition;
@@ -21,7 +23,9 @@
         @apply transition rounded-md p-1.5 -m-1.5 expand-animation;
     }
     .float-panel {
-        @apply top-[5.25rem] rounded-[var(--radius-large)] overflow-hidden bg-[var(--float-panel-bg)] transition shadow-xl dark:shadow-none
+        @apply top-[5.25rem] rounded-none overflow-hidden bg-[var(--float-panel-bg)] transition shadow-none;
+        border: 3px solid var(--line-color);
+        box-shadow: 6px 6px 0 rgba(0,0,0,0.2);
     }
     .float-panel-closed {
         @apply -translate-y-1 opacity-0 pointer-events-none
@@ -33,6 +37,7 @@
     .btn-card {
         @apply transition flex items-center justify-center bg-[var(--card-bg)] hover:bg-[var(--btn-card-bg-hover)]
         active:bg-[var(--btn-card-bg-active)]
+        rounded-none border-2 border-[var(--line-color)];
     }
     .btn-card.disabled {
         @apply pointer-events-none text-black/10 dark:text-white/10
@@ -53,11 +58,13 @@
     .btn-regular {
         @apply transition flex items-center justify-center bg-[var(--btn-regular-bg)] hover:bg-[var(--btn-regular-bg-hover)] active:bg-[var(--btn-regular-bg-active)]
         text-[var(--btn-content)] dark:text-white/75
+        rounded-none border-2 border-[var(--line-color)] shadow-[3px_3px_0_rgba(0,0,0,0.15)];
     }
 
     .link-underline {
-        @apply transition underline decoration-2 decoration-dashed decoration-[var(--link-underline)]
+        @apply transition underline decoration-2 decoration-[var(--link-underline)]
         hover:decoration-[var(--link-hover)] active:decoration-[var(--link-active)] underline-offset-[0.25rem]
+        decoration-dashed;
     }
 
     .toc-hide,
@@ -141,7 +148,7 @@
 }
 
 .custom-md spoiler {
-  @apply bg-[var(--codeblock-bg)] hover:bg-transparent px-1 py-0.5 overflow-hidden rounded-md transition-all duration-150;
+  @apply bg-[var(--codeblock-bg)] hover:bg-transparent px-1 py-0.5 overflow-hidden rounded-none transition-all duration-150;
 
   &:not(:hover) {
     color: var(--codeblock-bg);
@@ -149,4 +156,30 @@
         color: var(--codeblock-bg);
     }
   }
+}
+
+* {
+    border-radius: 0 !important;
+    image-rendering: pixelated;
+}
+
+::selection {
+    background-color: var(--primary);
+    color: white;
+}
+
+@keyframes pixel-blink {
+    0% { background-color: #ff6b6b; }
+    25% { background-color: #ffa500; }
+    50% { background-color: #686de0; }
+    75% { background-color: #4834d4; }
+    100% { background-color: #ff6b6b; }
+}
+
+html {
+    cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16'%3E%3Crect x='0' y='0' width='4' height='4' fill='%23ff6b6b'/%3E%3Crect x='4' y='0' width='4' height='4' fill='%23ffa500'/%3E%3Crect x='0' y='4' width='4' height='4' fill='%23ffa500'/%3E%3Crect x='4' y='4' width='4' height='4' fill='%23686de0'/%3E%3C/svg%3E") 0 0, auto;
+}
+
+a, button, [role="button"] {
+    cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16'%3E%3Crect x='0' y='0' width='4' height='4' fill='%23ffa500'/%3E%3Crect x='4' y='0' width='4' height='4' fill='%23ffa500'/%3E%3Crect x='0' y='4' width='4' height='4' fill='%23ffa500'/%3E%3Crect x='4' y='4' width='4' height='4' fill='%23ffa500'/%3E%3C/svg%3E") 0 0, pointer;
 }

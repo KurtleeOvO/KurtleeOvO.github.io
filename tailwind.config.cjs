@@ -6,7 +6,7 @@ module.exports = {
   theme: {
     extend: {
       fontFamily: {
-        sans: ["Roboto", "sans-serif", ...defaultTheme.fontFamily.sans],
+        sans: ["'Press Start 2P'", "'ZCOOL QingKe HuangYou'", "sans-serif", ...defaultTheme.fontFamily.sans],
       },
     },
   },
