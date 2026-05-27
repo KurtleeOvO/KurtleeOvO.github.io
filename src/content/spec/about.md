@@ -1,9 +1,5 @@
-# About
-This is the demo site for [Fuwari](https://github.com/saicaca/fuwari).
+# 简介
 
-::github{repo="saicaca/fuwari"}
+> - This is the blog website for [KurtleeOvO/KurtleeOvO.github.io](https://github.com/KurtleeOvO/KurtleeOvO.github.io.git).
 
-> ### Sources of images used in this site
-> - [Unsplash](https://unsplash.com/)
-> - [星と少女](https://www.pixiv.net/artworks/108916539) by [Stella](https://www.pixiv.net/users/93273965)
-> - [Rabbit - v1.4 Showcase](https://civitai.com/posts/586908) by [Rabbit_YourMajesty](https://civitai.com/user/Rabbit_YourMajesty)
+::github{repo="KurtleeOvO/KurtleeOvO.github.io"}
