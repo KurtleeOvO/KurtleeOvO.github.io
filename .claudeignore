@@ -1,0 +1,48 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+build/
+.next/
+.nuxt/
+out/
+
+# Coverage
+coverage/
+.nyc_output/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/settings.json
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Lock files (large, not useful for context)
+# 注意：此项目使用 pnpm，但 pnpm-lock.yaml 较大
+pnpm-lock.yaml
+
+# Generated types
+*.generated.ts
+*.generated.tsx
+
+# Logs
+*.log
+logs/
+
+# Large data files
+*.csv
+*.xlsx
+*.sqlite
+
+# Cache
+.cache/
+.parcel-cache/

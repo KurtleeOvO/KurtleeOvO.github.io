@@ -1,0 +1,250 @@
+<div id="to-wrapper" style="width:100%;position:relative;aspect-ratio:4/3;max-height:500px;">
+    <div id="to-container" style="width:100%;height:100%;position:relative;background:#000;border:2px solid #00f3ff;box-shadow:0 0 20px rgba(0,243,255,0.3),inset 0 0 20px rgba(0,243,255,0.1);overflow:hidden;">
+        <div style="position:absolute;top:0;left:0;width:100%;height:100%;background:repeating-linear-gradient(to bottom,transparent,transparent 2px,rgba(0,0,0,0.3) 2px,rgba(0,0,0,0.3) 4px);pointer-events:none;z-index:10;"></div>
+        <div id="to-flash" style="position:absolute;top:0;left:0;width:100%;height:100%;background:rgba(255,0,60,0.3);z-index:8;display:none;pointer-events:none;"></div>
+
+        <div id="to-startScreen" style="position:absolute;top:0;left:0;width:100%;height:100%;display:flex;flex-direction:column;justify-content:center;align-items:center;background:rgba(2,2,5,0.9);z-index:20;">
+            <canvas id="to-idleCanvas" style="position:absolute;top:0;left:0;width:100%;height:100%;z-index:-1;"></canvas>
+            <div data-text="TERMINAL OVERRIDE" style="font-size:clamp(16px,3.5vw,42px);font-weight:bold;color:#fff;position:relative;text-shadow:0.05em 0 0 #39ff14,-0.025em -0.025em 0 #00ffff;animation:to-glitch 2s infinite;margin-bottom:25px;letter-spacing:3px;font-family:'Press Start 2P','Courier New',monospace;text-align:center;">TERMINAL<br>OVERRIDE</div>
+            <button id="to-startBtn" style="padding:10px 28px;font-size:clamp(9px,1.3vw,14px);font-family:'Press Start 2P',monospace;font-weight:bold;color:#39ff14;background:rgba(57,255,20,0.05);border:1px solid #39ff14;cursor:pointer;box-shadow:0 0 10px rgba(57,255,20,0.3);transition:all 0.2s;">ROOT ACCESS</button>
+        </div>
+
+        <div id="to-hud" style="position:absolute;top:8px;left:12px;right:12px;display:none;justify-content:space-between;font-size:clamp(8px,1.1vw,13px);color:#39ff14;text-shadow:0 0 8px #39ff14;z-index:5;font-family:'Press Start 2P',monospace;">
+            <div>DECRYPT: <span id="to-score">0</span></div>
+            <div>CORE: <span id="to-health">100</span>%</div>
+        </div>
+
+        <canvas id="to-gameCanvas" style="display:none;width:100%;height:100%;"></canvas>
+
+        <div id="to-gameOver" style="position:absolute;top:0;left:0;width:100%;height:100%;display:none;flex-direction:column;justify-content:center;align-items:center;background:rgba(255,0,60,0.15);backdrop-filter:blur(3px);z-index:15;">
+            <h2 style="font-size:clamp(16px,3vw,32px);color:#ff003c;text-shadow:0 0 15px #ff003c;margin:0 0 8px;font-family:'Press Start 2P',monospace;">COMPROMISED</h2>
+            <p style="font-size:clamp(10px,1.3vw,14px);color:#fff;text-shadow:0 0 5px #fff;font-family:'Press Start 2P',monospace;">破解: <span id="to-finalScore">0</span></p>
+            <button id="to-restartBtn" style="margin-top:14px;padding:6px 18px;font-size:clamp(8px,1.1vw,12px);color:#ff003c;background:transparent;border:1px solid #ff003c;cursor:pointer;box-shadow:0 0 10px rgba(255,0,60,0.5);font-family:'Press Start 2P',monospace;">REBOOT</button>
+        </div>
+
+        <div id="to-tip" style="position:absolute;bottom:6px;width:100%;text-align:center;color:#444;font-size:clamp(7px,0.9vw,10px);font-family:'Press Start 2P',monospace;display:none;">键盘输入单词解密</div>
+    </div>
+</div>
+
+<script>
+const tCont = document.getElementById('to-container') as HTMLElement;
+const tIdle = document.getElementById('to-idleCanvas') as HTMLCanvasElement;
+const tICtx = tIdle.getContext('2d')!;
+const tCanvas = document.getElementById('to-gameCanvas') as HTMLCanvasElement;
+const tCtx = tCanvas.getContext('2d')!;
+const tStart = document.getElementById('to-startScreen') as HTMLElement;
+const tOver = document.getElementById('to-gameOver') as HTMLElement;
+const tFlash = document.getElementById('to-flash') as HTMLElement;
+const tHud = document.getElementById('to-hud') as HTMLElement;
+const tTip = document.getElementById('to-tip') as HTMLElement;
+const tScoreEl = document.getElementById('to-score') as HTMLElement;
+const tHealthEl = document.getElementById('to-health') as HTMLElement;
+const tFinalEl = document.getElementById('to-finalScore') as HTMLElement;
+
+let tW=800, tH=600;
+function toResize() {
+    const r = tCont.getBoundingClientRect();
+    tW = r.width; tH = r.height;
+    tCanvas.width = tW; tCanvas.height = tH;
+    tIdle.width = tW; tIdle.height = tH;
+}
+toResize();
+window.addEventListener('resize', toResize);
+
+const hexChars = "0123456789ABCDEF";
+let angles = [0, 0, 0];
+let tIdleId = 0;
+
+function toDrawIdle() {
+    tICtx.fillStyle = 'rgba(2,2,5,0.2)';
+    tICtx.fillRect(0, 0, tW, tH);
+    const cx = tW / 2, cy = tH / 2;
+    const radii = [Math.min(tW, tH) * 0.2, Math.min(tW, tH) * 0.3, Math.min(tW, tH) * 0.4];
+    const speeds = [0.01, -0.008, 0.005];
+    tICtx.font = `${Math.max(8, tW * 0.02)}px 'Press Start 2P',Courier New`;
+    tICtx.textAlign = 'center';
+    tICtx.textBaseline = 'middle';
+    for (let ri = 0; ri < 3; ri++) {
+        tICtx.save();
+        tICtx.translate(cx, cy);
+        angles[ri] += speeds[ri];
+        tICtx.rotate(angles[ri]);
+        const color = ri === 1 ? '#00ffff' : '#39ff14';
+        tICtx.fillStyle = color;
+        tICtx.shadowBlur = 6;
+        tICtx.shadowColor = color;
+        const items = ri * 8 + 16;
+        for (let i = 0; i < items; i++) {
+            tICtx.save();
+            tICtx.rotate((Math.PI * 2 / items) * i);
+            tICtx.translate(0, -radii[ri]);
+            if (Math.random() > 0.2) tICtx.fillText(hexChars[Math.floor(Math.random() * 16)], 0, 0);
+            tICtx.restore();
+        }
+        tICtx.restore();
+    }
+    tIdleId = requestAnimationFrame(toDrawIdle);
+}
+toDrawIdle();
+
+const wordList = ["ENCRYPT","PROXY","FIREWALL","OVERRIDE","SYNAPSE","NEURAL","MAINFRAME","BACKDOOR","CYBER","ROOTKIT","MALWARE","UPLINK","PAYLOAD","GHOST","MATRIX","BOTNET","PHISHING","NODE","PROTOCOL","KERNEL","TERMINAL","CIPHER"];
+
+let tActive = false, tAnimId = 0, tScore = 0, tHealth = 100, tFrame = 0, tSpeed = 0.8;
+let enemies: {text:string;x:number;y:number;speed:number;typedIndex:number}[] = [];
+let parts: {x:number;y:number;vx:number;vy:number;life:number}[] = [];
+let activeEnemy: typeof enemies[0] | null = null;
+
+function toSpawn() {
+    const word = wordList[Math.floor(Math.random() * wordList.length)];
+    tCtx.font = `bold ${Math.max(14, tW * 0.03)}px 'Press Start 2P',Courier New`;
+    const tw = tCtx.measureText(word).width;
+    enemies.push({ text: word, x: Math.random() * (tW - tw - 30) + 15, y: -25, speed: tSpeed + Math.random() * 0.4, typedIndex: 0 });
+}
+
+function toExplode(x: number, y: number) {
+    for (let i = 0; i < 12; i++) parts.push({ x, y, vx: (Math.random() - 0.5) * 6, vy: (Math.random() - 0.5) * 6, life: 1 });
+}
+
+function toCheck(e: typeof enemies[0]) {
+    if (e.typedIndex === e.text.length) {
+        tCtx.font = `bold ${Math.max(14, tW * 0.03)}px 'Press Start 2P',Courier New`;
+        toExplode(e.x + tCtx.measureText(e.text).width / 2, e.y);
+        tScore += e.text.length * 10;
+        tScoreEl.textContent = String(tScore);
+        enemies = enemies.filter(en => en !== e);
+        activeEnemy = null;
+        if (tScore % 200 === 0) tSpeed += 0.15;
+    }
+}
+
+function toDamage() {
+    tHealth -= 15;
+    tHealthEl.textContent = String(Math.max(0, tHealth));
+    tFlash.style.display = 'block';
+    setTimeout(() => { tFlash.style.display = 'none'; }, 100);
+    if (tHealth <= 0) {
+        tActive = false;
+        tFinalEl.textContent = String(tScore);
+        tOver.style.display = 'flex';
+        tTip.style.display = 'none';
+    }
+}
+
+function toDraw() {
+    if (!tActive) return;
+    tFrame++;
+    tCtx.fillStyle = '#020205';
+    tCtx.fillRect(0, 0, tW, tH);
+
+    const spawnRate = Math.max(50, 140 - Math.floor(tScore / 40));
+    if (tFrame % spawnRate === 0) toSpawn();
+
+    const fontSize = Math.max(14, tW * 0.03);
+    tCtx.font = `bold ${fontSize}px 'Press Start 2P',Courier New`;
+    tCtx.textAlign = 'left';
+
+    for (let i = enemies.length - 1; i >= 0; i--) {
+        const e = enemies[i];
+        e.y += e.speed;
+        if (e.y > tH + 20) {
+            if (activeEnemy === e) activeEnemy = null;
+            enemies.splice(i, 1);
+            toDamage();
+            continue;
+        }
+        const typed = e.text.substring(0, e.typedIndex);
+        const untyped = e.text.substring(e.typedIndex);
+        const typedW = tCtx.measureText(typed).width;
+
+        tCtx.fillStyle = e === activeEnemy ? '#00ffff' : '#ff003c';
+        tCtx.shadowBlur = 8;
+        tCtx.shadowColor = tCtx.fillStyle;
+        tCtx.fillText(untyped, e.x + typedW, e.y);
+
+        if (e.typedIndex > 0) {
+            tCtx.fillStyle = '#fff';
+            tCtx.shadowBlur = 12;
+            tCtx.shadowColor = '#39ff14';
+            tCtx.fillText(typed, e.x, e.y);
+        }
+        tCtx.shadowBlur = 0;
+    }
+
+    for (let i = parts.length - 1; i >= 0; i--) {
+        const p = parts[i];
+        p.x += p.vx; p.y += p.vy; p.life -= 0.03;
+        if (p.life <= 0) { parts.splice(i, 1); continue; }
+        tCtx.globalAlpha = p.life;
+        tCtx.fillStyle = '#39ff14';
+        tCtx.shadowBlur = 6;
+        tCtx.shadowColor = '#39ff14';
+        tCtx.fillRect(p.x, p.y, 3, 3);
+        tCtx.globalAlpha = 1;
+    }
+
+    tCtx.strokeStyle = 'rgba(0,255,255,0.3)';
+    tCtx.lineWidth = 2;
+    tCtx.beginPath();
+    tCtx.moveTo(0, tH - 4);
+    tCtx.lineTo(tW, tH - 4);
+    tCtx.stroke();
+
+    tAnimId = requestAnimationFrame(toDraw);
+}
+
+document.addEventListener('keydown', (e) => {
+    if (!tActive) return;
+    if (e.keyCode >= 65 && e.keyCode <= 90) {
+        const key = e.key.toUpperCase();
+        if (activeEnemy === null) {
+            let target: typeof enemies[0] | null = null;
+            for (const en of enemies) {
+                if (en.text[0] === key && (!target || en.y > target.y)) target = en;
+            }
+            if (target) {
+                activeEnemy = target;
+                activeEnemy.typedIndex = 1;
+                toCheck(activeEnemy);
+            }
+        } else {
+            if (key === activeEnemy.text[activeEnemy.typedIndex]) {
+                activeEnemy.typedIndex++;
+                toCheck(activeEnemy);
+            }
+        }
+    }
+});
+
+function toStart() {
+    cancelAnimationFrame(tIdleId);
+    toResize();
+    tStart.style.display = 'none';
+    tOver.style.display = 'none';
+    tCanvas.style.display = 'block';
+    tHud.style.display = 'flex';
+    tTip.style.display = 'block';
+    tScore = 0; tHealth = 100; tFrame = 0; tSpeed = 0.8;
+    enemies = []; parts = []; activeEnemy = null;
+    tScoreEl.textContent = '0';
+    tHealthEl.textContent = '100';
+    tActive = true;
+    toDraw();
+}
+
+document.getElementById('to-startBtn')!.addEventListener('click', toStart);
+document.getElementById('to-restartBtn')!.addEventListener('click', toStart);
+</script>
+
+<style>
+    @keyframes to-glitch {
+        0%,14%,100% { text-shadow: 0.05em 0 0 #39ff14, -0.025em -0.025em 0 #00ffff; }
+        15%,49% { text-shadow: -0.05em -0.025em 0 #39ff14, 0.025em 0.025em 0 #00ffff; }
+        50%,99% { text-shadow: 0.025em 0.05em 0 #39ff14, 0.05em 0 0 #00ffff; }
+    }
+    #to-startBtn:hover {
+        background: #39ff14 !important;
+        color: #000 !important;
+        box-shadow: 0 0 25px #39ff14 !important;
+    }
+    #to-restartBtn:hover { filter: brightness(1.5); }
+</style>

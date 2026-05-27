@@ -1,0 +1,507 @@
+<div id="tc-wrapper" style="width:100%;position:relative;aspect-ratio:16/9;max-height:600px;">
+    <div id="tc-container" style="width:100%;height:100%;position:relative;background:#111;border:2px solid #00f3ff;box-shadow:0 0 25px rgba(0,243,255,0.3),inset 0 0 20px rgba(0,243,255,0.1);overflow:hidden;">
+
+        <div id="tc-startMask" style="position:absolute;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);display:flex;flex-direction:column;justify-content:center;align-items:center;z-index:100;">
+            <div data-text="透明物理幕布" style="font-size:clamp(18px,3.5vw,42px);font-weight:bold;color:#fff;position:relative;text-shadow:0.05em 0 0 #00f3ff,-0.025em -0.025em 0 #00e5ff;animation:tc-glitch 2s infinite;margin-bottom:20px;letter-spacing:3px;font-family:'Press Start 2P','Courier New',monospace;text-align:center;">透明物理幕布</div>
+            <button id="tc-startBtn" style="padding:10px 28px;font-size:clamp(9px,1.3vw,14px);font-family:'Press Start 2P',monospace;font-weight:bold;color:#00f3ff;background:rgba(255,0,255,0.05);border:2px solid #00f3ff;cursor:pointer;box-shadow:0 0 15px rgba(0,243,255,0.3);transition:all 0.2s;">启动交互 (允许摄像头)</button>
+            <p style="color:#555;font-size:clamp(7px,0.9vw,10px);font-family:'Press Start 2P',monospace;margin-top:12px;">手势抓取布料 或 鼠标拖拽</p>
+        </div>
+
+        <div id="tc-uiLayer" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;opacity:0;transition:opacity 0.3s;">
+            <div id="tc-topRight" style="position:absolute;top:10px;right:10px;display:flex;gap:8px;pointer-events:auto;">
+                <button id="tc-fullscreenBtn" style="background:rgba(0,0,0,0.5);color:white;border:none;width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:14px;">⛶</button>
+                <button id="tc-toggleUI" style="background:rgba(0,0,0,0.5);color:white;border:none;width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:14px;">👁</button>
+            </div>
+            <div id="tc-bottomRight" style="position:absolute;bottom:10px;right:10px;display:flex;gap:10px;align-items:center;background:rgba(0,0,0,0.5);padding:6px 14px;border-radius:14px;pointer-events:auto;">
+                <input type="file" id="tc-mediaUpload" accept="image/*,video/*" style="display:none;">
+                <button id="tc-uploadBtn" style="background:#444;color:#fff;border:none;padding:5px 10px;border-radius:8px;cursor:pointer;font-size:11px;">上传</button>
+                <button id="tc-flipBtn" style="background:#444;color:#fff;border:none;padding:5px 10px;border-radius:8px;cursor:pointer;font-size:11px;">翻转镜头</button>
+                <input type="range" id="tc-zoomSlider" min="0.5" max="2" step="0.1" value="1" style="width:80px;">
+            </div>
+        </div>
+
+        <canvas id="tc-mainCanvas" style="display:none;width:100%;height:100%;"></canvas>
+    </div>
+</div>
+
+<script is:inline>
+(function() {
+    const container = document.getElementById('tc-container');
+    const canvas = document.getElementById('tc-mainCanvas');
+    const ctx = canvas.getContext('2d');
+    const startMask = document.getElementById('tc-startMask');
+    const uiLayer = document.getElementById('tc-uiLayer');
+    const uploadBtn = document.getElementById('tc-uploadBtn');
+    const mediaUpload = document.getElementById('tc-mediaUpload');
+    const flipBtn = document.getElementById('tc-flipBtn');
+    const zoomSlider = document.getElementById('tc-zoomSlider');
+    const toggleUIBtn = document.getElementById('tc-toggleUI');
+    const fullscreenBtn = document.getElementById('tc-fullscreenBtn');
+    const bottomRight = document.getElementById('tc-bottomRight');
+
+    let W = 800, H = 450;
+    let video = null;
+    let handsData = [];
+    let cloth = null;
+    let mediaEl = null;
+    let isMediaVideo = false;
+    let uiVisible = true;
+    let flipCamera = true;
+    let zoomFactor = 1.0;
+    let active = false;
+
+    const GRID_W = 38;
+    const GRID_H = 35;
+    const FRICTION = 0.94;
+    const GRAVITY_VAL = 0.08;
+    const CONSTRAINT_ITERATIONS = 12;
+    const STICK_STIFFNESS = 0.4;
+    const STATE_DEFAULT = 0;
+    const STATE_FLYING = 1;
+    const STATE_FALLING = 2;
+
+    const currentGrabPoints = [];
+    const newTrackedHands = [];
+    let trackedHands = [];
+
+    function resize() {
+        const r = container.getBoundingClientRect();
+        W = r.width; H = r.height;
+        canvas.width = W; canvas.height = H;
+    }
+
+    function noise(x, y, z) {
+        return (Math.sin(x * 12.9898 + y * 78.233 + z * 37.719) * 43758.5453) % 1;
+    }
+
+    function mapVal(v, a, b, c, d) {
+        let t = (v - a) / (b - a);
+        if (t < 0) t = 0; if (t > 1) t = 1;
+        return c + (d - c) * t;
+    }
+
+    class Point {
+        constructor(x, y, isPinned) {
+            this.x = x; this.y = y;
+            this.oldx = x; this.oldy = y;
+            this.baseX = x; this.baseY = y;
+            this.pinned = isPinned;
+            this.flyYOffset = Math.random() * 40 - 35;
+            this.flyXOffset = Math.random() * 40 - 20;
+        }
+        update(frameCount) {
+            if (this.pinned) return;
+            let vx = (this.x - this.oldx) * FRICTION;
+            let vy = (this.y - this.oldy) * FRICTION;
+            this.oldx = this.x; this.oldy = this.y;
+            this.x += vx; this.y += vy + GRAVITY_VAL;
+            let wn = Math.sin(this.x * 0.01 * Math.PI * 2 + frameCount * 0.02) * 0.3;
+            this.x += wn;
+        }
+    }
+
+    class Stick {
+        constructor(p1, p2) {
+            this.p1 = p1; this.p2 = p2;
+            let dx = p2.x - p1.x, dy = p2.y - p1.y;
+            this.length = Math.sqrt(dx * dx + dy * dy);
+        }
+        update() {
+            let dx = this.p2.x - this.p1.x;
+            let dy = this.p2.y - this.p1.y;
+            let d = Math.sqrt(dx * dx + dy * dy) || 0.001;
+            let diff = this.length - d;
+            let percent = (diff / d) * STICK_STIFFNESS;
+            let ox = dx * percent, oy = dy * percent;
+            if (!this.p1.pinned) { this.p1.x -= ox; this.p1.y -= oy; }
+            if (!this.p2.pinned) { this.p2.x += ox; this.p2.y += oy; }
+        }
+    }
+
+    class Cloth {
+        constructor(w, h, sx, sy) {
+            this.points = []; this.sticks = []; this.boundary = [];
+            this.w = w; this.h = h; this.startX = sx; this.startY = sy;
+            this.state = STATE_DEFAULT;
+            let spX = w / (GRID_W - 1), spY = h / (GRID_H - 1);
+            for (let y = 0; y < GRID_H; y++) {
+                for (let x = 0; x < GRID_W; x++) {
+                    this.points.push(new Point(sx + x * spX, sy + y * spY, y === 0));
+                }
+            }
+            for (let y = 0; y < GRID_H; y++) {
+                for (let x = 0; x < GRID_W; x++) {
+                    let i = y * GRID_W + x;
+                    if (x < GRID_W - 1) this.sticks.push(new Stick(this.points[i], this.points[i + 1]));
+                    if (y < GRID_H - 1) this.sticks.push(new Stick(this.points[i], this.points[i + GRID_W]));
+                }
+            }
+        }
+        update(grabPoints, fc) {
+            for (let p of this.points) {
+                if (this.state === STATE_FLYING) {
+                    if (!p.pinned) {
+                        p.y += (-85 + p.flyYOffset - p.y) * 0.02;
+                        p.x += (p.baseX + p.flyXOffset - p.x) * 0.02;
+                    }
+                } else if (this.state === STATE_FALLING) {
+                    if (!p.pinned) {
+                        p.x += (p.baseX - p.x) * 0.0011;
+                        p.y += (p.baseY - p.y) * 0.0011;
+                    }
+                }
+                p.update(fc);
+            }
+            for (let i = 0; i < CONSTRAINT_ITERATIONS; i++) {
+                for (let s of this.sticks) s.update();
+            }
+            for (let gp of grabPoints) {
+                for (let p of this.points) {
+                    let dx = p.x - gp.x, dy = p.y - gp.y;
+                    if (dx * dx + dy * dy < 22500) {
+                        if (!p.pinned) { p.x = gp.x; p.y = gp.y; }
+                    }
+                }
+            }
+        }
+        draw(fc) {
+            this.boundary.length = 0;
+            for (let x = 0; x < GRID_W; x++) this.boundary.push(this.points[x]);
+            for (let y = 1; y < GRID_H - 1; y++) this.boundary.push(this.points[y * GRID_W + GRID_W - 1]);
+            for (let x = GRID_W - 1; x >= 0; x--) this.boundary.push(this.points[(GRID_H - 1) * GRID_W + x]);
+            for (let y = GRID_H - 2; y >= 1; y--) this.boundary.push(this.points[y * GRID_W]);
+
+            ctx.save();
+            ctx.beginPath();
+            ctx.moveTo(this.boundary[0].x, this.boundary[0].y);
+            for (let i = 1; i < this.boundary.length; i++) ctx.lineTo(this.boundary[i].x, this.boundary[i].y);
+            ctx.closePath(); ctx.clip();
+
+            drawCameraImage();
+
+            let origArea = (this.w / (GRID_W - 1)) * (this.h / (GRID_H - 1));
+            for (let y = 0; y < GRID_H - 1; y++) {
+                for (let x = 0; x < GRID_W - 1; x++) {
+                    let p1 = this.points[y * GRID_W + x];
+                    let p2 = this.points[y * GRID_W + x + 1];
+                    let p3 = this.points[(y + 1) * GRID_W + x + 1];
+                    let p4 = this.points[(y + 1) * GRID_W + x];
+                    let ca = 0.5 * Math.abs(
+                        (p1.x*p2.y - p2.x*p1.y) + (p2.x*p3.y - p3.x*p2.y) +
+                        (p3.x*p4.y - p4.x*p3.y) + (p4.x*p1.y - p1.x*p4.y)
+                    );
+                    let ratio = ca / origArea;
+                    if (ratio < 0.95) {
+                        let a = mapVal(ratio, 0.95, 0.2, 0, 120);
+                        ctx.fillStyle = `rgba(0,0,0,${a / 255})`;
+                        ctx.beginPath(); ctx.moveTo(p1.x,p1.y); ctx.lineTo(p2.x,p2.y); ctx.lineTo(p3.x,p3.y); ctx.lineTo(p4.x,p4.y); ctx.closePath(); ctx.fill();
+                    } else if (ratio > 1.05) {
+                        let a = mapVal(ratio, 1.05, 2.0, 0, 60);
+                        ctx.fillStyle = `rgba(255,255,255,${a / 255})`;
+                        ctx.beginPath(); ctx.moveTo(p1.x,p1.y); ctx.lineTo(p2.x,p2.y); ctx.lineTo(p3.x,p3.y); ctx.lineTo(p4.x,p4.y); ctx.closePath(); ctx.fill();
+                    }
+                }
+            }
+
+            ctx.shadowColor = 'rgba(255,255,255,0.8)';
+            ctx.shadowBlur = 12;
+            ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.moveTo(this.boundary[0].x, this.boundary[0].y);
+            for (let i = 1; i < this.boundary.length; i++) {
+                let p0 = this.boundary[(i - 1 + this.boundary.length) % this.boundary.length];
+                let p1 = this.boundary[i];
+                let p2 = this.boundary[(i + 1) % this.boundary.length];
+                let cx = p1.x + (p2.x - p0.x) * 0.15;
+                let cy = p1.y + (p2.y - p0.y) * 0.15;
+                ctx.quadraticCurveTo(p1.x, p1.y, cx, cy);
+            }
+            ctx.closePath(); ctx.stroke();
+            ctx.shadowBlur = 0;
+
+            ctx.strokeStyle = 'rgba(0,0,0,0.12)';
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.moveTo(this.boundary[0].x, this.boundary[0].y);
+            for (let i = 1; i < this.boundary.length; i++) {
+                let p0 = this.boundary[(i - 1 + this.boundary.length) % this.boundary.length];
+                let p1 = this.boundary[i];
+                let p2 = this.boundary[(i + 1) % this.boundary.length];
+                let cx = p1.x + (p2.x - p0.x) * 0.15;
+                let cy = p1.y + (p2.y - p0.y) * 0.15;
+                ctx.quadraticCurveTo(p1.x, p1.y, cx, cy);
+            }
+            ctx.closePath(); ctx.stroke();
+
+            ctx.restore();
+        }
+    }
+
+    function drawCameraImage() {
+        ctx.save();
+        if (flipCamera) { ctx.translate(W, 0); ctx.scale(-1, 1); }
+        ctx.translate(W / 2, H / 2);
+        ctx.scale(zoomFactor, zoomFactor);
+        if (video) ctx.drawImage(video, -W / 2, -H / 2, W, H);
+        ctx.restore();
+    }
+
+    function initCloth() {
+        let cw = W * 0.85, ch = H * 0.55;
+        if (mediaEl) {
+            let ma = mediaEl.naturalWidth ? mediaEl.naturalWidth / mediaEl.naturalHeight : mediaEl.videoWidth / mediaEl.videoHeight;
+            let sa = cw / ch;
+            if (ma > sa) ch = cw / ma; else cw = ch * ma;
+        }
+        cloth = new Cloth(cw, ch, (W - cw) / 2, (H - ch) / 2);
+    }
+
+    let frameCount = 0;
+    function loop() {
+        if (!active) return;
+        frameCount++;
+        ctx.fillStyle = '#111';
+        ctx.fillRect(0, 0, W, H);
+
+        if (video && video.readyState >= 2) {
+            drawCameraImage();
+        }
+
+        if (cloth) {
+            if (mediaEl) {
+                try {
+                    ctx.drawImage(mediaEl, cloth.startX, cloth.startY, cloth.w, cloth.h);
+                } catch(e) {}
+            } else {
+                ctx.fillStyle = 'rgba(0,243,255,0.05)';
+                ctx.fillRect(cloth.startX, cloth.startY, cloth.w, cloth.h);
+                ctx.fillStyle = 'rgba(255,255,255,0.3)';
+                ctx.font = '14px "Press Start 2P", monospace';
+                ctx.textAlign = 'center';
+                ctx.fillText('上传媒体或直接拖拽布料', W / 2, H / 2);
+            }
+
+            cloth.update(currentGrabPoints, frameCount);
+            cloth.draw(frameCount);
+        }
+
+        requestAnimationFrame(loop);
+    }
+
+    let pinchStates = [];
+
+    function processHands() {
+        currentGrabPoints.length = 0;
+        newTrackedHands.length = 0;
+
+        for (let i = 0; i < handsData.length; i++) {
+            let lm = handsData[i];
+            let thumb = lm[4], index = lm[8];
+            let tx = flipCamera ? (1 - thumb.x) * W : thumb.x * W;
+            let ty = thumb.y * H;
+            let ix = flipCamera ? (1 - index.x) * W : index.x * W;
+            let iy = index.y * H;
+            let mx = (tx + ix) / 2, my = (ty + iy) / 2;
+            let distH = Math.sqrt((tx - ix) ** 2 + (ty - iy) ** 2) / W;
+
+            let matched = { isPinching: false, lastY: my, smoothX: mx, smoothY: my };
+            for (let th of trackedHands) {
+                if (Math.sqrt((mx - th.smoothX) ** 2 + (my - th.smoothY) ** 2) < 200) { matched = th; break; }
+            }
+
+            let isPinching = matched.isPinching;
+            if (!isPinching && distH < 0.05) isPinching = true;
+            if (isPinching && distH > 0.08) {
+                isPinching = false;
+                let vy = my - matched.lastY;
+                if (vy < -15) cloth.state = STATE_FLYING;
+                if (vy > 15) cloth.state = STATE_FALLING;
+            }
+
+            if (isPinching) {
+                currentGrabPoints.push({ x: mx, y: my });
+                cloth.state = STATE_DEFAULT;
+            }
+
+            newTrackedHands.push({ isPinching, lastY: my, smoothX: mx, smoothY: my });
+        }
+        trackedHands = newTrackedHands.slice();
+    }
+
+    let mouseDown = false;
+    canvas.addEventListener('mousedown', (e) => {
+        mouseDown = true;
+        const r = container.getBoundingClientRect();
+        currentGrabPoints.push({ x: e.clientX - r.left, y: e.clientY - r.top });
+        if (cloth) cloth.state = STATE_DEFAULT;
+    });
+    canvas.addEventListener('mousemove', (e) => {
+        if (!mouseDown) return;
+        const r = container.getBoundingClientRect();
+        currentGrabPoints.length = 0;
+        currentGrabPoints.push({ x: e.clientX - r.left, y: e.clientY - r.top });
+    });
+    canvas.addEventListener('mouseup', (e) => {
+        mouseDown = false;
+        currentGrabPoints.length = 0;
+        if (cloth) {
+            const r = container.getBoundingClientRect();
+            let vy = e.clientY - r.top - (e.clientY - r.top);
+            if (e.movementY < -15) cloth.state = STATE_FLYING;
+            if (e.movementY > 15) cloth.state = STATE_FALLING;
+        }
+    });
+
+    canvas.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        const t = e.touches[0];
+        const r = container.getBoundingClientRect();
+        currentGrabPoints.push({ x: t.clientX - r.left, y: t.clientY - r.top });
+        if (cloth) cloth.state = STATE_DEFAULT;
+    }, { passive: false });
+    canvas.addEventListener('touchmove', (e) => {
+        e.preventDefault();
+        const t = e.touches[0];
+        const r = container.getBoundingClientRect();
+        currentGrabPoints.length = 0;
+        currentGrabPoints.push({ x: t.clientX - r.left, y: t.clientY - r.top });
+    }, { passive: false });
+    canvas.addEventListener('touchend', (e) => {
+        currentGrabPoints.length = 0;
+    });
+
+    let handsLib = null;
+    let cameraUtil = null;
+
+    function initMediaPipe() {
+        if (!window.Hands || !window.Camera) {
+            console.error('MediaPipe libraries not loaded');
+            return;
+        }
+        const hands = new window.Hands({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}` });
+        hands.setOptions({
+            maxNumHands: 2,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.6,
+            minTrackingConfidence: 0.6
+        });
+        hands.onResults((results) => { handsData = results.multiHandLandmarks || []; processHands(); });
+
+        const cam = new window.Camera(video, {
+            onFrame: async () => { await hands.send({ image: video }); },
+            width: 640, height: 480
+        });
+        cam.start();
+    }
+
+    function handleUpload(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+        const url = URL.createObjectURL(file);
+        if (file.type.startsWith('video/')) {
+            const v = document.createElement('video');
+            v.src = url; v.loop = true; v.muted = true; v.playsInline = true;
+            v.onloadeddata = () => { mediaEl = v; isMediaVideo = true; v.play(); initCloth(); };
+        } else {
+            const img = new Image();
+            img.onload = () => { mediaEl = img; isMediaVideo = false; initCloth(); };
+            img.src = url;
+        }
+    }
+
+    function startApp() {
+        startMask.style.display = 'none';
+        canvas.style.display = 'block';
+        uiLayer.style.opacity = '1';
+        resize();
+        active = true;
+
+        video = document.createElement('video');
+        video.setAttribute('playsinline', '');
+        video.setAttribute('autoplay', '');
+        video.muted = true;
+        video.style.display = 'none';
+        document.body.appendChild(video);
+
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: 640, height: 480 } })
+            .then((stream) => {
+                video.srcObject = stream;
+                video.onloadedmetadata = () => {
+                    video.play();
+                    initMediaPipe();
+                    initCloth();
+                    loop();
+                };
+            })
+            .catch((err) => {
+                console.warn('Camera access denied, using mouse only:', err);
+                initCloth();
+                loop();
+            });
+    }
+
+    startMask.querySelector('#tc-startBtn').addEventListener('click', startApp);
+    mediaUpload.addEventListener('change', handleUpload);
+    toggleUIBtn.addEventListener('click', () => {
+        uiVisible = !uiVisible;
+        bottomRight.style.display = uiVisible ? 'flex' : 'none';
+    });
+    flipBtn.addEventListener('click', () => { flipCamera = !flipCamera; });
+    zoomSlider.addEventListener('input', (e) => { zoomFactor = parseFloat(e.target.value); });
+
+    uploadBtn.addEventListener('click', () => mediaUpload.click());
+
+    fullscreenBtn.addEventListener('click', () => {
+        const wrapper = document.getElementById('tc-wrapper');
+        if (!document.fullscreenElement) {
+            wrapper.requestFullscreen().catch(() => {});
+        } else {
+            document.exitFullscreen();
+        }
+    });
+
+    document.addEventListener('fullscreenchange', () => {
+        const wrapper = document.getElementById('tc-wrapper');
+        if (document.fullscreenElement) {
+            wrapper.style.maxHeight = 'none';
+            wrapper.style.aspectRatio = 'auto';
+            wrapper.style.width = '100vw';
+            wrapper.style.height = '100vh';
+            fullscreenBtn.textContent = '⛶';
+        } else {
+            wrapper.style.maxHeight = '';
+            wrapper.style.aspectRatio = '';
+            wrapper.style.width = '';
+            wrapper.style.height = '';
+            fullscreenBtn.textContent = '⛶';
+        }
+        setTimeout(() => { resize(); if (cloth) initCloth(); }, 100);
+    });
+
+    window.addEventListener('resize', () => {
+        resize();
+        if (cloth) initCloth();
+    });
+    resize();
+})();
+</script>
+
+<style>
+    @keyframes tc-glitch {
+        0%,14%,100% { text-shadow: 0.05em 0 0 #00f3ff, -0.025em -0.025em 0 #00e5ff; }
+        15%,49% { text-shadow: -0.05em -0.025em 0 #00f3ff, 0.025em 0.025em 0 #00e5ff; }
+        50%,99% { text-shadow: 0.025em 0.05em 0 #00f3ff, 0.05em 0 0 #00e5ff; }
+    }
+    #tc-startBtn:hover {
+        background: #00f3ff !important;
+        color: #000 !important;
+        box-shadow: 0 0 30px #00f3ff, inset 0 0 10px #fff !important;
+    }
+    #tc-uploadBtn:hover, #tc-flipBtn:hover {
+        background: #666 !important;
+    }
+    #tc-fullscreenBtn:hover {
+        background: rgba(0,243,255,0.3) !important;
+    }
+</style>

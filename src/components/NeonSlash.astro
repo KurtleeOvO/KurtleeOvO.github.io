@@ -1,0 +1,243 @@
+<div id="ns-wrapper" style="width:100%;position:relative;aspect-ratio:4/3;max-height:500px;">
+    <div id="ns-container" style="width:100%;height:100%;position:relative;background:#000;border:2px solid #00e5ff;box-shadow:0 0 25px rgba(0,229,255,0.3),inset 0 0 20px rgba(0,229,255,0.1);overflow:hidden;cursor:crosshair;">
+        <div id="ns-scanlines" style="position:absolute;top:0;left:0;width:100%;height:100%;background:repeating-linear-gradient(to bottom,transparent,transparent 2px,rgba(0,0,0,0.2) 2px,rgba(0,0,0,0.2) 4px);pointer-events:none;z-index:10;"></div>
+
+        <div id="ns-startScreen" style="position:absolute;top:0;left:0;width:100%;height:100%;display:flex;flex-direction:column;justify-content:center;align-items:center;background:rgba(3,3,8,0.85);z-index:20;">
+            <canvas id="ns-idleCanvas" style="position:absolute;top:0;left:0;width:100%;height:100%;z-index:-1;"></canvas>
+            <div data-text="NEON SLASH" style="font-size:clamp(18px,4.5vw,50px);font-weight:bold;color:#fff;position:relative;text-shadow:0.05em 0 0 #00f3ff,-0.025em -0.025em 0 #00e5ff;animation:ns-glitch 2s infinite;margin-bottom:25px;letter-spacing:4px;font-family:'Press Start 2P','Courier New',monospace;text-align:center;">NEON SLASH</div>
+            <button id="ns-startBtn" style="padding:10px 28px;font-size:clamp(9px,1.3vw,14px);font-family:'Press Start 2P',monospace;font-weight:bold;color:#00e5ff;background:rgba(255,0,255,0.05);border:2px solid #00e5ff;cursor:pointer;box-shadow:0 0 15px rgba(0,229,255,0.3);transition:all 0.2s;">ENGAGE BLADE</button>
+        </div>
+
+        <div id="ns-hud" style="position:absolute;top:8px;left:12px;right:12px;display:none;justify-content:space-between;font-size:clamp(8px,1.1vw,13px);z-index:5;font-family:'Press Start 2P',monospace;pointer-events:none;">
+            <div style="color:#00f3ff;text-shadow:0 0 8px #00f3ff;">DATA: <span id="ns-score">0</span> MB</div>
+            <div style="color:#39ff14;text-shadow:0 0 8px #39ff14;">LIVES: <span id="ns-lives">3</span></div>
+        </div>
+
+        <canvas id="ns-gameCanvas" style="display:none;width:100%;height:100%;"></canvas>
+
+        <div id="ns-gameOver" style="position:absolute;top:0;left:0;width:100%;height:100%;display:none;flex-direction:column;justify-content:center;align-items:center;background:rgba(255,0,60,0.2);backdrop-filter:blur(4px);z-index:15;">
+            <h2 style="font-size:clamp(18px,3.5vw,38px);color:#ff003c;text-shadow:0 0 20px #ff003c;margin:0 0 8px;font-family:'Press Start 2P',monospace;">CRITICAL FAILURE</h2>
+            <p style="font-size:clamp(10px,1.3vw,16px);color:#fff;text-shadow:0 0 5px #fff;font-family:'Press Start 2P',monospace;">提取: <span id="ns-finalScore">0</span> MB</p>
+            <button id="ns-restartBtn" style="margin-top:14px;padding:6px 18px;font-size:clamp(8px,1.1vw,12px);color:#ff003c;background:transparent;border:2px solid #ff003c;cursor:pointer;box-shadow:0 0 10px rgba(255,0,60,0.5);font-family:'Press Start 2P',monospace;">REBOOT</button>
+        </div>
+
+        <div id="ns-tip" style="position:absolute;bottom:6px;width:100%;text-align:center;color:#555;font-size:clamp(7px,0.9vw,10px);font-family:'Press Start 2P',monospace;display:none;pointer-events:none;">鼠标拖拽切碎绿色数据包</div>
+    </div>
+</div>
+
+<script>
+const nCont = document.getElementById('ns-container') as HTMLElement;
+const nIdle = document.getElementById('ns-idleCanvas') as HTMLCanvasElement;
+const nICtx = nIdle.getContext('2d')!;
+const nCanvas = document.getElementById('ns-gameCanvas') as HTMLCanvasElement;
+const nCtx = nCanvas.getContext('2d')!;
+const nStart = document.getElementById('ns-startScreen') as HTMLElement;
+const nOver = document.getElementById('ns-gameOver') as HTMLElement;
+const nScan = document.getElementById('ns-scanlines') as HTMLElement;
+const nHud = document.getElementById('ns-hud') as HTMLElement;
+const nTip = document.getElementById('ns-tip') as HTMLElement;
+const nScoreEl = document.getElementById('ns-score') as HTMLElement;
+const nLivesEl = document.getElementById('ns-lives') as HTMLElement;
+const nFinalEl = document.getElementById('ns-finalScore') as HTMLElement;
+
+let nW=800, nH=600;
+function nsResize() {
+    const r = nCont.getBoundingClientRect();
+    nW=r.width; nH=r.height;
+    nCanvas.width=nW; nCanvas.height=nH;
+    nIdle.width=nW; nIdle.height=nH;
+}
+nsResize();
+window.addEventListener('resize', nsResize);
+
+const verts = [[-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],[-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1]];
+const edgs = [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]];
+let aX=0, aY=0, nIdleId=0;
+
+function nsDrawIdle() {
+    nICtx.fillStyle='rgba(3,3,8,0.2)';
+    nICtx.fillRect(0,0,nW,nH);
+    nICtx.save();
+    nICtx.translate(nW/2,nH/2);
+    nICtx.strokeStyle='#00f3ff'; nICtx.lineWidth=2; nICtx.shadowBlur=10; nICtx.shadowColor='#00f3ff';
+    const proj:{x:number;y:number}[] = [];
+    const fov=200, dist=3;
+    for(const v of verts) {
+        let x=v[0]*Math.cos(aY)-v[2]*Math.sin(aY), z=v[0]*Math.sin(aY)+v[2]*Math.cos(aY), y=v[1];
+        let y2=y*Math.cos(aX)-z*Math.sin(aX), z2=y*Math.sin(aX)+z*Math.cos(aX);
+        let f=fov/(dist+z2);
+        proj.push({x:x*f*Math.min(nW,nH)*0.07, y:y2*f*Math.min(nW,nH)*0.07});
+    }
+    nICtx.beginPath();
+    for(const e of edgs){nICtx.moveTo(proj[e[0]].x,proj[e[0]].y);nICtx.lineTo(proj[e[1]].x,proj[e[1]].y);}
+    nICtx.stroke();
+    nICtx.fillStyle='#ff00ff'; nICtx.shadowColor='#ff00ff';
+    for(const p of proj){nICtx.beginPath();nICtx.arc(p.x,p.y,3,0,Math.PI*2);nICtx.fill();}
+    nICtx.restore();
+    aX+=0.005; aY+=0.01;
+    nIdleId=requestAnimationFrame(nsDrawIdle);
+}
+nsDrawIdle();
+
+let nActive=false, nAnimId=0, nScore=0, nLives=3, nFrame=0;
+let tgts:{x:number;y:number;vx:number;vy:number;g:number;r:number;type:string;color:number[];rot:number;rs:number}[]=[];
+let nParts:{x:number;y:number;vx:number;vy:number;life:number;size:number;color:number[]}[]=[];
+let trail:{x:number;y:number;age:number}[]=[];
+let isSlash=false, nmX=0, nmY=0, nlmX=0, nlmY=0;
+
+function nsSpawn() {
+    const bomb = Math.random()<0.25;
+    const sz = Math.random()*15+20;
+    tgts.push({
+        x:Math.random()*(nW-80)+40, y:nH+sz,
+        vx:(Math.random()-0.5)*4,
+        vy:-(Math.random()*5+10+nScore*0.05),
+        g:0.15, r:sz,
+        type:bomb?'bomb':'data',
+        color:bomb?[255,0,60]:[57,255,20],
+        rot:0, rs:(Math.random()-0.5)*0.2
+    });
+}
+
+function nsExplode(x:number,y:number,c:number[],n:number) {
+    for(let i=0;i<n;i++) nParts.push({x,y,vx:(Math.random()-0.5)*12,vy:(Math.random()-0.5)*12,life:1,size:Math.random()*4+2,color:c});
+}
+
+function distSeg(px:number,py:number,vx:number,vy:number,wx:number,wy:number) {
+    let l2=(wx-vx)**2+(wy-vy)**2;
+    if(l2===0) return (px-vx)**2+(py-vy)**2;
+    let t=Math.max(0,Math.min(1,((px-vx)*(wx-vx)+(py-vy)*(wy-vy))/l2));
+    return (px-(vx+t*(wx-vx)))**2+(py-(vy+t*(wy-vy)))**2;
+}
+
+function nsCheck() {
+    if(trail.length<2) return;
+    const p1=trail[trail.length-2], p2=trail[trail.length-1];
+    for(let i=tgts.length-1;i>=0;i--) {
+        const t=tgts[i];
+        if(distSeg(t.x,t.y,p1.x,p1.y,p2.x,p2.y)<(t.r+5)**2) {
+            if(t.type==='data') {
+                nScore+=10; nScoreEl.textContent=String(nScore);
+                nsExplode(t.x,t.y,t.color,15);
+                tgts.splice(i,1);
+            } else {
+                nsExplode(t.x,t.y,t.color,40);
+                tgts.splice(i,1);
+                nsGameOver(); return;
+            }
+        }
+    }
+}
+
+function nsDamage() {
+    nLives--; nLivesEl.textContent=String(nLives);
+    nScan.style.transition='none'; nScan.style.background='rgba(255,0,60,0.4),'+nScan.style.background.split(',').slice(1).join(',');
+    setTimeout(()=>{nScan.style.transition='background 0.3s';},50);
+    setTimeout(()=>{nScan.style.background='repeating-linear-gradient(to bottom,transparent,transparent 2px,rgba(0,0,0,0.2) 2px,rgba(0,0,0,0.2) 4px)';},300);
+    if(nLives<=0) nsGameOver();
+}
+
+function nsGameOver() {
+    nActive=false;
+    nFinalEl.textContent=String(nScore);
+    setTimeout(()=>{nOver.style.display='flex';nTip.style.display='none';},300);
+}
+
+function nsDraw() {
+    if(!nActive) return;
+    nFrame++;
+    nCtx.fillStyle='rgba(3,3,8,0.5)'; nCtx.fillRect(0,0,nW,nH);
+    let rate=Math.max(18,55-Math.floor(nScore/50));
+    if(nFrame%rate===0) nsSpawn();
+
+    for(let i=tgts.length-1;i>=0;i--) {
+        const t=tgts[i];
+        t.vy+=t.g; t.x+=t.vx; t.y+=t.vy; t.rot+=t.rs;
+        nCtx.save(); nCtx.translate(t.x,t.y); nCtx.rotate(t.rot);
+        nCtx.shadowBlur=15;
+        const cs=`rgb(${t.color[0]},${t.color[1]},${t.color[2]})`;
+        nCtx.shadowColor=cs; nCtx.fillStyle=cs;
+        if(t.type==='data') {
+            nCtx.fillRect(-t.r,-t.r,t.r*2,t.r*2);
+            nCtx.fillStyle='#fff'; nCtx.fillRect(-t.r/2,-t.r/2,t.r,t.r);
+        } else {
+            nCtx.beginPath(); nCtx.moveTo(0,-t.r*1.2); nCtx.lineTo(t.r,t.r); nCtx.lineTo(-t.r,t.r); nCtx.closePath(); nCtx.fill();
+            nCtx.fillStyle='#000'; nCtx.beginPath(); nCtx.arc(0,t.r/3,t.r/2,0,Math.PI*2); nCtx.fill();
+        }
+        nCtx.restore();
+        if(t.y>nH+t.r*2) {
+            if(t.type==='data'){nsDamage();if(!nActive)return;}
+            tgts.splice(i,1);
+        }
+    }
+
+    if(trail.length>1) {
+        nCtx.beginPath(); nCtx.moveTo(trail[0].x,trail[0].y);
+        for(let i=1;i<trail.length;i++) nCtx.lineTo(trail[i].x,trail[i].y);
+        nCtx.lineJoin='round'; nCtx.lineCap='round';
+        nCtx.lineWidth=5; nCtx.strokeStyle='#00f3ff'; nCtx.shadowBlur=18; nCtx.shadowColor='#00f3ff'; nCtx.stroke();
+        nCtx.lineWidth=2; nCtx.strokeStyle='#fff'; nCtx.shadowBlur=0; nCtx.stroke();
+        for(const p of trail) p.age++;
+        trail=trail.filter(p=>p.age<8);
+        if(!isSlash&&trail.length>0) trail.shift();
+    }
+
+    nCtx.shadowBlur=8;
+    for(let i=nParts.length-1;i>=0;i--) {
+        const p=nParts[i]; p.x+=p.vx; p.y+=p.vy; p.life-=0.02;
+        if(p.life<=0){nParts.splice(i,1);continue;}
+        nCtx.globalAlpha=p.life;
+        nCtx.fillStyle=`rgb(${p.color[0]},${p.color[1]},${p.color[2]})`;
+        nCtx.shadowColor=nCtx.fillStyle;
+        nCtx.fillRect(p.x,p.y,p.size,p.size);
+        nCtx.globalAlpha=1;
+    }
+    nAnimId=requestAnimationFrame(nsDraw);
+}
+
+function nsMousePos(e:MouseEvent) {
+    const r=nCont.getBoundingClientRect();
+    nmX=e.clientX-r.left; nmY=e.clientY-r.top;
+}
+
+nCont.addEventListener('mousedown',(e)=>{isSlash=true;trail=[];nsMousePos(e);});
+nCont.addEventListener('mousemove',(e)=>{
+    if(!isSlash)return;
+    nlmX=nmX;nlmY=nmY;nsMousePos(e);
+    trail.push({x:nmX,y:nmY,age:0});
+    nsCheck();
+});
+nCont.addEventListener('mouseup',()=>{isSlash=false;});
+nCont.addEventListener('mouseleave',()=>{isSlash=false;});
+
+nCont.addEventListener('touchstart',(e)=>{e.preventDefault();isSlash=true;trail=[];const t=e.touches[0];const r=nCont.getBoundingClientRect();nmX=t.clientX-r.left;nmY=t.clientY-r.top;},{passive:false});
+nCont.addEventListener('touchmove',(e)=>{e.preventDefault();if(!isSlash)return;nlmX=nmX;nlmY=nmY;const t=e.touches[0];const r=nCont.getBoundingClientRect();nmX=t.clientX-r.left;nmY=t.clientY-r.top;trail.push({x:nmX,y:nmY,age:0});nsCheck();},{passive:false});
+nCont.addEventListener('touchend',()=>{isSlash=false;});
+
+function nsStart() {
+    cancelAnimationFrame(nIdleId); nsResize();
+    nStart.style.display='none'; nOver.style.display='none';
+    nCanvas.style.display='block'; nHud.style.display='flex'; nTip.style.display='block';
+    nScan.style.background='repeating-linear-gradient(to bottom,transparent,transparent 2px,rgba(0,0,0,0.2) 2px,rgba(0,0,0,0.2) 4px)';
+    nScore=0;nLives=3;nFrame=0;tgts=[];nParts=[];trail=[];isSlash=false;
+    nScoreEl.textContent='0'; nLivesEl.textContent='3';
+    nActive=true; nsDraw();
+}
+
+document.getElementById('ns-startBtn')!.addEventListener('click',nsStart);
+document.getElementById('ns-restartBtn')!.addEventListener('click',nsStart);
+</script>
+
+<style>
+    @keyframes ns-glitch {
+        0%,14%,100% { text-shadow: 0.05em 0 0 #00f3ff, -0.025em -0.025em 0 #00e5ff; }
+        15%,49% { text-shadow: -0.05em -0.025em 0 #00f3ff, 0.025em 0.025em 0 #00e5ff; }
+        50%,99% { text-shadow: 0.025em 0.05em 0 #00f3ff, 0.05em 0 0 #00e5ff; }
+    }
+    #ns-startBtn:hover {
+        background: #00e5ff !important;
+        color: #000 !important;
+        box-shadow: 0 0 30px #00e5ff, inset 0 0 10px #fff !important;
+    }
+    #ns-restartBtn:hover { filter: brightness(1.5); }
+</style>

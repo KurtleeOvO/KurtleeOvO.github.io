@@ -1,0 +1,166 @@
+<div id="hd-wrapper" style="width:100%;position:relative;aspect-ratio:4/3;max-height:500px;">
+    <div id="hd-container" style="width:100%;height:100%;position:relative;background:#000;border:2px solid #00e5ff;box-shadow:0 0 20px rgba(0,229,255,0.3),inset 0 0 20px rgba(0,229,255,0.1);overflow:hidden;">
+        <div style="position:absolute;top:0;left:0;width:100%;height:100%;background:repeating-linear-gradient(to bottom,transparent,transparent 2px,rgba(0,0,0,0.2) 2px,rgba(0,0,0,0.2) 4px);pointer-events:none;z-index:10;"></div>
+
+        <div id="hd-startScreen" style="position:absolute;top:0;left:0;width:100%;height:100%;display:flex;flex-direction:column;justify-content:center;align-items:center;background:rgba(5,5,8,0.85);z-index:20;">
+            <canvas id="hd-idleCanvas" style="position:absolute;top:0;left:0;width:100%;height:100%;z-index:-1;"></canvas>
+            <div data-text="HOVER DRONE" style="font-size:clamp(20px,5vw,52px);font-weight:bold;color:#fff;position:relative;text-shadow:0.05em 0 0 #00e5ff,-0.025em -0.025em 0 #ff0055;animation:hd-glitch 1.5s infinite;margin-bottom:25px;letter-spacing:2px;font-family:'Press Start 2P','Courier New',monospace;text-align:center;">HOVER DRONE</div>
+            <button id="hd-startBtn" style="padding:10px 28px;font-size:clamp(10px,1.5vw,16px);font-family:'Press Start 2P',monospace;font-weight:bold;color:#00e5ff;background:transparent;border:2px solid #00e5ff;cursor:pointer;box-shadow:0 0 10px rgba(0,229,255,0.4);transition:all 0.3s;">LAUNCH</button>
+        </div>
+
+        <div id="hd-hud" style="position:absolute;top:10px;left:16px;font-size:clamp(10px,1.5vw,18px);color:#00e5ff;text-shadow:0 0 8px #00e5ff;z-index:5;display:none;font-family:'Press Start 2P',monospace;">ZONE: <span id="hd-score">0</span></div>
+
+        <canvas id="hd-gameCanvas" style="display:none;width:100%;height:100%;"></canvas>
+
+        <div id="hd-gameOver" style="position:absolute;top:0;left:0;width:100%;height:100%;display:none;flex-direction:column;justify-content:center;align-items:center;background:rgba(255,0,85,0.15);backdrop-filter:blur(2px);z-index:15;">
+            <h2 style="font-size:clamp(18px,3vw,36px);color:#ff0055;text-shadow:0 0 15px #ff0055;margin:0 0 8px;font-family:'Press Start 2P',monospace;">DRONE DESTROYED</h2>
+            <p style="font-size:clamp(10px,1.5vw,16px);color:#fff;text-shadow:0 0 5px #fff;font-family:'Press Start 2P',monospace;">突破: <span id="hd-finalScore">0</span> 层</p>
+            <button id="hd-restartBtn" style="margin-top:16px;padding:6px 20px;font-size:clamp(9px,1.2vw,14px);color:#ff0055;background:transparent;border:2px solid #ff0055;cursor:pointer;box-shadow:0 0 10px rgba(255,0,85,0.5);font-family:'Press Start 2P',monospace;">REBOOT</button>
+        </div>
+
+        <div id="hd-tip" style="position:absolute;bottom:8px;width:100%;text-align:center;color:#555;font-size:clamp(8px,1vw,11px);font-family:'Press Start 2P',monospace;display:none;">SPACE / 点击 推力</div>
+    </div>
+</div>
+
+<script>
+const hCont = document.getElementById('hd-container') as HTMLElement;
+const hIdle = document.getElementById('hd-idleCanvas') as HTMLCanvasElement;
+const hICtx = hIdle.getContext('2d')!;
+const hCanvas = document.getElementById('hd-gameCanvas') as HTMLCanvasElement;
+const hCtx = hCanvas.getContext('2d')!;
+const hStart = document.getElementById('hd-startScreen') as HTMLElement;
+const hOver = document.getElementById('hd-gameOver') as HTMLElement;
+const hHud = document.getElementById('hd-hud') as HTMLElement;
+const hTip = document.getElementById('hd-tip') as HTMLElement;
+const hScoreEl = document.getElementById('hd-score') as HTMLElement;
+const hFinalEl = document.getElementById('hd-finalScore') as HTMLElement;
+
+let hW=800, hH=500;
+function hdResize() {
+    const r = hCont.getBoundingClientRect();
+    hW=r.width; hH=r.height;
+    hCanvas.width=hW; hCanvas.height=hH;
+    hIdle.width=hW; hIdle.height=hH;
+}
+hdResize();
+window.addEventListener('resize', hdResize);
+
+const nds: {x:number;y:number;vx:number;vy:number;r:number}[] = [];
+for(let i=0;i<50;i++) nds.push({x:Math.random()*hW,y:Math.random()*hH,vx:(Math.random()-0.5)*1.5,vy:(Math.random()-0.5)*1.5,r:Math.random()*2+1});
+let hIdleId=0;
+function hdDrawIdle() {
+    hICtx.clearRect(0,0,hW,hH);
+    hICtx.fillStyle='#00e5ff'; hICtx.shadowBlur=5; hICtx.shadowColor='#00e5ff';
+    for(const n of nds) {
+        n.x+=n.vx; n.y+=n.vy;
+        if(n.x<0||n.x>hW) n.vx*=-1;
+        if(n.y<0||n.y>hH) n.vy*=-1;
+        hICtx.beginPath(); hICtx.arc(n.x,n.y,n.r,0,Math.PI*2); hICtx.fill();
+    }
+    hICtx.lineWidth=1;
+    for(let i=0;i<nds.length;i++) for(let j=i+1;j<nds.length;j++) {
+        const dx=nds[i].x-nds[j].x, dy=nds[i].y-nds[j].y, d=Math.sqrt(dx*dx+dy*dy);
+        if(d<100) { hICtx.strokeStyle=`rgba(0,229,255,${1-d/100})`; hICtx.beginPath(); hICtx.moveTo(nds[i].x,nds[i].y); hICtx.lineTo(nds[j].x,nds[j].y); hICtx.stroke(); }
+    }
+    hIdleId=requestAnimationFrame(hdDrawIdle);
+}
+hdDrawIdle();
+
+let hActive=false, hAnimId=0, hScore=0, hFrame=0, hSpeed=4;
+const dr={x:0,y:0,w:0,h:0,vy:0};
+let lasers:{x:number;top:number;bottom:number;w:number;passed:boolean}[]=[];
+let parts:{x:number;y:number;vx:number;vy:number;life:number;size:number;boom?:boolean}[]=[];
+const gapRatio=0.28;
+
+function hdScale() {
+    dr.x=hW*0.18; dr.w=hW*0.04; dr.h=hH*0.03;
+    dr.y=hH*0.5;
+}
+
+function hdThrust() { if(hActive) dr.vy=-hH*0.014; }
+
+function hdSpawn() {
+    const gap=hH*gapRatio, minH=hH*0.1;
+    const top=Math.random()*(hH-gap-minH*2)+minH;
+    lasers.push({x:hW,top,bottom:hH-(top+gap),w:hW*0.05,passed:false});
+}
+
+function hdExhaust() {
+    parts.push({x:dr.x,y:dr.y+dr.h/2+(Math.random()-0.5)*4,vx:-hSpeed-Math.random()*2,vy:(Math.random()-0.5)*1,life:1,size:Math.random()*3+2});
+}
+
+function hdBoom(x:number,y:number) {
+    for(let i=0;i<25;i++) parts.push({x,y,vx:(Math.random()-0.5)*10,vy:(Math.random()-0.5)*10,life:1,size:Math.random()*4+2,boom:true});
+}
+
+function hdDraw() {
+    if(!hActive) return;
+    hFrame++;
+    hCtx.fillStyle='#050508'; hCtx.fillRect(0,0,hW,hH);
+    dr.vy+=hH*0.001; dr.y+=dr.vy;
+    if(hFrame%2===0) hdExhaust();
+    if(dr.y+dr.h>hH||dr.y<0) { hdCrash(); return; }
+    if(hFrame%Math.floor(90*(4/hSpeed))===0) hdSpawn();
+    hCtx.shadowBlur=15; hCtx.shadowColor='#ff0055'; hCtx.fillStyle='#ff0055';
+    for(let i=lasers.length-1;i>=0;i--) {
+        const l=lasers[i]; l.x-=hSpeed;
+        hCtx.fillRect(l.x,0,l.w,l.top);
+        hCtx.fillRect(l.x,hH-l.bottom,l.w,l.bottom);
+        hCtx.fillStyle='#fff'; hCtx.fillRect(l.x+l.w/2-1,0,2,l.top); hCtx.fillRect(l.x+l.w/2-1,hH-l.bottom,2,l.bottom);
+        hCtx.fillStyle='#ff0055';
+        if(dr.x+dr.w>l.x&&dr.x<l.x+l.w&&(dr.y<l.top||dr.y+dr.h>hH-l.bottom)){hdCrash();return;}
+        if(l.x+l.w<dr.x&&!l.passed){l.passed=true;hScore++;hScoreEl.textContent=String(hScore);if(hScore%5===0)hSpeed+=0.3;}
+        if(l.x+l.w<0) lasers.splice(i,1);
+    }
+    hCtx.shadowBlur=8;
+    for(let i=parts.length-1;i>=0;i--) {
+        const p=parts[i]; p.x+=p.vx; p.y+=p.vy; p.life-=p.boom?0.02:0.04;
+        if(p.life<=0){parts.splice(i,1);continue;}
+        hCtx.globalAlpha=p.life; hCtx.fillStyle=p.boom?'#ff0055':'#00e5ff'; hCtx.shadowColor=hCtx.fillStyle;
+        hCtx.fillRect(p.x,p.y,p.size,p.size);
+    }
+    hCtx.globalAlpha=1; hCtx.shadowBlur=20; hCtx.shadowColor='#00e5ff'; hCtx.fillStyle='#00e5ff';
+    hCtx.beginPath();
+    hCtx.moveTo(dr.x+dr.w,dr.y+dr.h/2);
+    hCtx.lineTo(dr.x,dr.y);
+    hCtx.lineTo(dr.x+dr.w*0.15,dr.y+dr.h/2);
+    hCtx.lineTo(dr.x,dr.y+dr.h);
+    hCtx.closePath(); hCtx.fill();
+    hCtx.fillStyle='#fff'; hCtx.fillRect(dr.x+dr.w*0.5,dr.y+dr.h*0.4,3,dr.h*0.2);
+    hAnimId=requestAnimationFrame(hdDraw);
+}
+
+function hdCrash() {
+    hActive=false; hdBoom(dr.x+dr.w/2,dr.y+dr.h/2);
+    cancelAnimationFrame(hAnimId);
+    hFinalEl.textContent=String(hScore);
+    setTimeout(()=>{hOver.style.display='flex';hTip.style.display='none';},400);
+}
+
+function hdStart() {
+    cancelAnimationFrame(hIdleId); hdResize(); hdScale();
+    hStart.style.display='none'; hOver.style.display='none';
+    hCanvas.style.display='block'; hHud.style.display='block'; hTip.style.display='block';
+    hScore=0;hFrame=0;hSpeed=4;dr.y=hH*0.5;dr.vy=0;lasers=[];parts=[];
+    hScoreEl.textContent='0'; hActive=true; hdDraw();
+}
+
+hCont.addEventListener('click',hdThrust);
+document.addEventListener('keydown',(e)=>{if(e.code==='Space'&&hActive){e.preventDefault();hdThrust();}});
+document.getElementById('hd-startBtn')!.addEventListener('click',hdStart);
+document.getElementById('hd-restartBtn')!.addEventListener('click',hdStart);
+</script>
+
+<style>
+    @keyframes hd-glitch {
+        0%,14%,100% { text-shadow: 0.05em 0 0 #00e5ff, -0.025em -0.025em 0 #ff0055; }
+        15%,49% { text-shadow: -0.05em -0.025em 0 #00e5ff, 0.025em 0.025em 0 #ff0055; }
+        50%,99% { text-shadow: 0.025em 0.05em 0 #00e5ff, 0.05em 0 0 #ff0055; }
+    }
+    #hd-startBtn:hover {
+        background: #00e5ff !important;
+        color: #000 !important;
+        box-shadow: 0 0 25px #00e5ff, inset 0 0 10px #fff !important;
+    }
+    #hd-restartBtn:hover { filter: brightness(1.5); }
+</style>

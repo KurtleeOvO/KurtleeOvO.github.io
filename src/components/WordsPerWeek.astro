@@ -1,0 +1,158 @@
+---
+import { getCollection } from "astro:content";
+import { getISOWeeksInYear, getISOWeekYear } from "@utils/date-utils";
+import { Icon } from "astro-icon/components";
+
+const posts = await getCollection("posts", ({ data }) => {
+	return import.meta.env.PROD ? data.draft !== true : true;
+});
+
+type YearRow = {
+	year: number;
+	weeksInYear: number;
+	weeklyWords: number[];
+	max: number;
+};
+
+const yearMap = new Map<number, number[]>();
+
+for (const post of posts) {
+	const { remarkPluginFrontmatter } = await post.render();
+	const words = Number(remarkPluginFrontmatter?.words || 0);
+	if (!Number.isFinite(words) || words <= 0) continue;
+
+	const { year, week } = getISOWeekYear(post.data.published);
+	const weeksInYear = getISOWeeksInYear(year);
+	const size = Math.max(53, weeksInYear);
+	const arr = yearMap.get(year) ?? Array.from({ length: size }, () => 0);
+	if (arr.length < size) arr.length = size;
+	arr[week - 1] = (arr[week - 1] || 0) + words;
+	yearMap.set(year, arr);
+}
+
+const years = Array.from(yearMap.keys()).sort((a, b) => a - b);
+const rows: YearRow[] = years.map((year) => {
+	const weeksInYear = getISOWeeksInYear(year);
+	const size = Math.max(53, weeksInYear);
+	const arr = yearMap.get(year) ?? Array.from({ length: size }, () => 0);
+	if (arr.length < size) arr.length = size;
+	const max = arr.reduce((m, v) => (v > m ? v : m), 0);
+	return { year, weeksInYear, weeklyWords: arr, max };
+});
+
+const tickWeeks = new Set([1, 14, 27, 40, 53]);
+
+const getLevel = (value: number, max: number) => {
+	if (!value || value <= 0) return 0;
+	if (!max || max <= 0) return 0;
+	return Math.min(5, Math.max(1, Math.ceil((value / max) * 5)));
+};
+
+const getCellClass = (level: number) => {
+	if (level === 0) return "wpw-l-0";
+	if (level === 1) return "wpw-l-1";
+	if (level === 2) return "wpw-l-2";
+	if (level === 3) return "wpw-l-3";
+	if (level === 4) return "wpw-l-4";
+	return "wpw-l-5";
+};
+---
+
+<div class="card-base px-6 py-5 mb-4">
+    <div class="flex items-center justify-between gap-4">
+        <div class="flex items-center gap-2">
+            <div class="text-2xl font-bold tracking-tight text-black/50 dark:text-white/50">文章热力值</div>
+            <Icon name="material-symbols:history-rounded" class="text-[1.25rem] text-black/30 dark:text-white/30"></Icon>
+        </div>
+        <div class="flex items-center gap-2 text-black/40 dark:text-white/40 select-none shrink-0">
+            <div>Less</div>
+            <div class="flex items-center gap-1">
+                <div class="w-3.5 h-3.5 rounded-sm wpw-l-1"></div>
+                <div class="w-3.5 h-3.5 rounded-sm wpw-l-2"></div>
+                <div class="w-3.5 h-3.5 rounded-sm wpw-l-3"></div>
+                <div class="w-3.5 h-3.5 rounded-sm wpw-l-4"></div>
+                <div class="w-3.5 h-3.5 rounded-sm wpw-l-5"></div>
+            </div>
+            <div>More</div>
+        </div>
+    </div>
+
+    <div class="mt-4 overflow-x-auto">
+        <div class="min-w-max">
+            {rows.length === 0 && (
+                <div class="text-black/40 dark:text-white/40">No posts yet</div>
+            )}
+            {rows.length > 0 && (
+                <div class="flex flex-col gap-3">
+                    {rows.map((row) => {
+                        const cols = Math.max(53, row.weeksInYear);
+                        return (
+                            <div class="flex items-start gap-4">
+                                <div class="w-14 text-lg font-bold text-black/50 dark:text-white/50 leading-4 pt-1">
+                                    {row.year}
+                                </div>
+                                <div class="flex flex-col gap-2">
+                                    <div class="grid gap-1" style={`grid-template-columns: repeat(${cols}, 1rem);`}>
+                                        {Array.from({ length: cols }, (_, i) => {
+                                            const words = row.weeklyWords[i] || 0;
+                                            const w = i + 1;
+                                            const level = getLevel(words, row.max);
+                                            return (
+                                                <div
+                                                    class:list={[
+                                                        "w-4 h-4 rounded-sm transition-colors",
+                                                        getCellClass(level),
+                                                    ]}
+                                                    title={`${row.year} W${w}: ${words} words`}
+                                                ></div>
+                                            );
+                                        })}
+                                    </div>
+                                    <div
+                                        class="grid gap-1 text-xs text-black/30 dark:text-white/30 select-none"
+                                        style={`grid-template-columns: repeat(${cols}, 1rem);`}
+                                    >
+                                        {Array.from({ length: cols }, (_, i) => {
+                                            const w = i + 1;
+                                            return (
+                                                <div class="h-4">
+                                                    {tickWeeks.has(w) && (
+                                                        <div class="-translate-x-2">{`W${w}`}</div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+        </div>
+    </div>
+</div>
+
+<style>
+    .wpw-l-0 {
+        background: rgba(255, 255, 255, 0.04);
+    }
+    :global(.dark) .wpw-l-0 {
+        background: rgba(255, 255, 255, 0.06);
+    }
+    .wpw-l-1 {
+        background: rgba(96, 165, 250, 0.18);
+    }
+    .wpw-l-2 {
+        background: rgba(96, 165, 250, 0.32);
+    }
+    .wpw-l-3 {
+        background: rgba(96, 165, 250, 0.48);
+    }
+    .wpw-l-4 {
+        background: rgba(96, 165, 250, 0.68);
+    }
+    .wpw-l-5 {
+        background: rgba(96, 165, 250, 0.92);
+    }
+</style>

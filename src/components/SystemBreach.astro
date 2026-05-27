@@ -1,0 +1,242 @@
+<div id="sb-wrapper" style="width:100%;position:relative;aspect-ratio:4/3;max-height:500px;">
+    <div id="sb-container" style="width:100%;height:100%;position:relative;background:#000;border:2px solid #00ffff;box-shadow:0 0 25px rgba(0,255,255,0.4),inset 0 0 20px rgba(0,255,255,0.1);overflow:hidden;">
+        <div class="sb-scanlines" style="position:absolute;top:0;left:0;width:100%;height:100%;background:repeating-linear-gradient(to bottom,transparent,transparent 2px,rgba(0,0,0,0.15) 2px,rgba(0,0,0,0.15) 4px);pointer-events:none;z-index:10;"></div>
+
+        <div id="sb-startScreen" style="position:absolute;top:0;left:0;width:100%;height:100%;display:flex;flex-direction:column;justify-content:center;align-items:center;background:rgba(1,1,5,0.85);z-index:20;">
+            <canvas id="sb-idleCanvas" style="position:absolute;top:0;left:0;width:100%;height:100%;z-index:-1;"></canvas>
+            <div class="sb-glitch" data-text="SYSTEM BREACH" style="font-size:clamp(18px,4vw,48px);font-weight:bold;color:#fff;text-shadow:0.05em 0 0 #ff00ff,-0.05em -0.025em 0 #00ffff;animation:sb-glitch 2s infinite;margin-bottom:25px;letter-spacing:3px;text-align:center;font-family:'Press Start 2P','Courier New',monospace;">SYSTEM BREACH</div>
+            <button id="sb-startBtn" style="padding:10px 28px;font-size:clamp(10px,1.5vw,16px);font-family:'Press Start 2P',monospace;font-weight:bold;color:#ffff00;background:rgba(255,255,0,0.05);border:2px solid #ffff00;cursor:pointer;box-shadow:0 0 15px rgba(255,255,0,0.3);transition:all 0.2s;">EXECUTE</button>
+        </div>
+
+        <div id="sb-hud" style="position:absolute;top:8px;left:12px;right:12px;display:none;justify-content:space-between;font-size:clamp(9px,1.2vw,14px);color:#00ffff;text-shadow:0 0 8px #00ffff;z-index:5;font-family:'Press Start 2P',monospace;">
+            <div>NODES: <span id="sb-scoreVal">0</span></div>
+            <div>HITS: <span id="sb-livesVal">3</span></div>
+        </div>
+
+        <canvas id="sb-gameCanvas" style="display:none;width:100%;height:100%;"></canvas>
+
+        <div id="sb-gameOver" style="position:absolute;top:0;left:0;width:100%;height:100%;display:none;flex-direction:column;justify-content:center;align-items:center;background:rgba(255,0,60,0.15);backdrop-filter:blur(4px);z-index:15;">
+            <h2 style="font-size:clamp(18px,3vw,36px);color:#ff00ff;text-shadow:0 0 20px #ff00ff;margin:0 0 8px;font-family:'Press Start 2P',monospace;">ACCESS DENIED</h2>
+            <p style="font-size:clamp(10px,1.5vw,16px);color:#fff;text-shadow:0 0 5px #fff;font-family:'Press Start 2P',monospace;">连接已断开</p>
+            <button id="sb-restartBtn" style="margin-top:16px;padding:6px 20px;font-size:clamp(9px,1.2vw,14px);color:#ff00ff;background:transparent;border:2px solid #ff00ff;cursor:pointer;box-shadow:0 0 10px rgba(255,0,255,0.5);font-family:'Press Start 2P',monospace;">RECONNECT</button>
+        </div>
+
+        <div id="sb-gameWin" style="position:absolute;top:0;left:0;width:100%;height:100%;display:none;flex-direction:column;justify-content:center;align-items:center;background:rgba(0,255,255,0.15);backdrop-filter:blur(4px);z-index:15;">
+            <h2 style="font-size:clamp(18px,3vw,36px);color:#00ffff;text-shadow:0 0 20px #00ffff;margin:0 0 8px;font-family:'Press Start 2P',monospace;">SYSTEM OVERRIDDEN</h2>
+            <p style="font-size:clamp(10px,1.5vw,16px);color:#fff;text-shadow:0 0 5px #fff;font-family:'Press Start 2P',monospace;">最高权限已获取</p>
+            <button id="sb-nextBtn" style="margin-top:16px;padding:6px 20px;font-size:clamp(9px,1.2vw,14px);color:#00ffff;background:transparent;border:2px solid #00ffff;cursor:pointer;box-shadow:0 0 10px rgba(0,255,255,0.5);font-family:'Press Start 2P',monospace;">NEXT LAYER</button>
+        </div>
+
+        <div id="sb-tip" style="position:absolute;bottom:8px;width:100%;text-align:center;color:#555;font-size:clamp(8px,1vw,11px);font-family:'Press Start 2P',monospace;display:none;">鼠标控制反射板</div>
+    </div>
+</div>
+
+<script>
+const sCont = document.getElementById('sb-container') as HTMLElement;
+const sIdle = document.getElementById('sb-idleCanvas') as HTMLCanvasElement;
+const sIdleCtx = sIdle.getContext('2d')!;
+const sCanvas = document.getElementById('sb-gameCanvas') as HTMLCanvasElement;
+const sCtx = sCanvas.getContext('2d')!;
+const sStart = document.getElementById('sb-startScreen') as HTMLElement;
+const sOver = document.getElementById('sb-gameOver') as HTMLElement;
+const sWin = document.getElementById('sb-gameWin') as HTMLElement;
+const sHud = document.getElementById('sb-hud') as HTMLElement;
+const sTip = document.getElementById('sb-tip') as HTMLElement;
+const sScoreEl = document.getElementById('sb-scoreVal') as HTMLElement;
+const sLivesEl = document.getElementById('sb-livesVal') as HTMLElement;
+
+let sW = 800, sH = 600;
+function sbResize() {
+    const r = sCont.getBoundingClientRect();
+    sW = r.width; sH = r.height;
+    sCanvas.width = sW; sCanvas.height = sH;
+    sIdle.width = sW; sIdle.height = sH;
+}
+sbResize();
+window.addEventListener('resize', sbResize);
+
+let radarAngle = 0;
+let blips: {x:number;y:number;life:number}[] = [];
+let idleId = 0;
+
+function drawIdle() {
+    sIdleCtx.fillStyle = 'rgba(1,1,5,0.08)';
+    sIdleCtx.fillRect(0, 0, sW, sH);
+    const cx = sW/2, cy = sH/2, mr = Math.min(sW, sH)*0.4;
+    sIdleCtx.strokeStyle = 'rgba(0,255,255,0.15)';
+    sIdleCtx.lineWidth = 1;
+    sIdleCtx.beginPath();
+    sIdleCtx.arc(cx,cy,mr*0.4,0,Math.PI*2);
+    sIdleCtx.arc(cx,cy,mr*0.7,0,Math.PI*2);
+    sIdleCtx.arc(cx,cy,mr,0,Math.PI*2);
+    sIdleCtx.moveTo(cx,cy-mr); sIdleCtx.lineTo(cx,cy+mr);
+    sIdleCtx.moveTo(cx-mr,cy); sIdleCtx.lineTo(cx+mr,cy);
+    sIdleCtx.stroke();
+    sIdleCtx.fillStyle = 'rgba(0,255,255,0.2)';
+    sIdleCtx.beginPath(); sIdleCtx.moveTo(cx,cy);
+    sIdleCtx.arc(cx,cy,mr,radarAngle,radarAngle+0.2); sIdleCtx.fill();
+    sIdleCtx.strokeStyle = '#00ffff'; sIdleCtx.shadowBlur = 10; sIdleCtx.shadowColor = '#00ffff';
+    sIdleCtx.beginPath(); sIdleCtx.moveTo(cx,cy);
+    sIdleCtx.lineTo(cx+Math.cos(radarAngle+0.2)*mr, cy+Math.sin(radarAngle+0.2)*mr);
+    sIdleCtx.stroke(); sIdleCtx.shadowBlur = 0;
+    if (Math.random()<0.05) {
+        const r2 = Math.random()*mr, a = Math.random()*Math.PI*2;
+        blips.push({x:cx+Math.cos(a)*r2, y:cy+Math.sin(a)*r2, life:1});
+    }
+    sIdleCtx.fillStyle = '#ffff00'; sIdleCtx.shadowBlur = 8; sIdleCtx.shadowColor = '#ffff00';
+    for (let i=blips.length-1;i>=0;i--) {
+        const b=blips[i]; sIdleCtx.globalAlpha=b.life;
+        sIdleCtx.beginPath(); sIdleCtx.arc(b.x,b.y,3,0,Math.PI*2); sIdleCtx.fill();
+        b.life-=0.015; if(b.life<=0) blips.splice(i,1);
+    }
+    sIdleCtx.globalAlpha = 1; radarAngle += 0.04;
+    idleId = requestAnimationFrame(drawIdle);
+}
+drawIdle();
+
+let sActive = false, sAnimId = 0, sScore = 0, sLives = 3;
+const pad = {h:0,w:0,x:0,y:0};
+const bal = {r:0,x:0,y:0,dx:0,dy:0};
+const bRow = 6, bCol = 9;
+let bW=0, bH=0, bPad=0, bTop=0, bLeft=0;
+let bricks: {x:number;y:number;status:number;color:string}[][] = [];
+let sParts: {x:number;y:number;vx:number;vy:number;life:number;color:string}[] = [];
+
+function sbScale() {
+    pad.h = sH * 0.02;
+    pad.w = sW * 0.13;
+    pad.y = sH * 0.93;
+    bH = sH * 0.035;
+    bW = sW * 0.09;
+    bPad = sW * 0.012;
+    bTop = sH * 0.1;
+    bLeft = (sW - bCol * (bW + bPad) + bPad) / 2;
+    bal.r = Math.max(4, sW * 0.008);
+}
+
+function sbResetBall() {
+    bal.x = pad.x + pad.w/2;
+    bal.y = pad.y - 15;
+    bal.dx = (sW * 0.006) * (Math.random()>0.5?1:-1);
+    bal.dy = -(sH * 0.009);
+}
+
+function sbInit() {
+    cancelAnimationFrame(idleId);
+    sbResize(); sbScale();
+    sStart.style.display = 'none';
+    sOver.style.display = 'none';
+    sWin.style.display = 'none';
+    sCanvas.style.display = 'block';
+    sHud.style.display = 'flex';
+    sTip.style.display = 'block';
+    sScore = 0; sLives = 3;
+    pad.x = sW/2 - pad.w/2;
+    sbResetBall();
+    bricks = [];
+    const colors = ['#ff00ff','#ff003c','#ffff00','#00ffff','#00ffff','#00ff00'];
+    for (let c=0;c<bCol;c++) {
+        bricks[c]=[];
+        for (let r=0;r<bRow;r++) {
+            bricks[c][r] = {x:c*(bW+bPad)+bLeft, y:r*(bH+bPad)+bTop, status:1, color:colors[r]};
+        }
+    }
+    sParts = [];
+    sActive = true;
+    sbUpdate();
+}
+
+function sbUpdateHUD() {
+    sScoreEl.textContent = String(sScore);
+    sLivesEl.textContent = String(sLives);
+}
+
+function sbSpawn(x:number,y:number,c:string) {
+    for(let i=0;i<8;i++) sParts.push({x,y,vx:(Math.random()-0.5)*6,vy:(Math.random()-0.5)*6,life:1,color:c});
+}
+
+function sbDraw() {
+    sCtx.fillStyle = 'rgba(0,0,0,0.4)';
+    sCtx.fillRect(0,0,sW,sH);
+    sCtx.shadowBlur = 12; sCtx.shadowColor = pad.h > 0 ? '#00ffff' : '#00ffff';
+    sCtx.fillStyle = '#00ffff';
+    sCtx.fillRect(pad.x, pad.y, pad.w, pad.h);
+    sCtx.fillStyle = '#fff';
+    sCtx.fillRect(pad.x+pad.w*0.2, pad.y+2, pad.w*0.6, pad.h-4);
+    sCtx.beginPath(); sCtx.arc(bal.x,bal.y,bal.r,0,Math.PI*2);
+    sCtx.shadowColor = '#ffff00'; sCtx.fillStyle = '#ffff00'; sCtx.fill();
+    for(let c=0;c<bCol;c++) for(let r=0;r<bRow;r++) {
+        const b=bricks[c][r]; if(!b.status) continue;
+        sCtx.shadowColor = b.color; sCtx.fillStyle = b.color;
+        sCtx.fillRect(b.x,b.y,bW,bH);
+        sCtx.strokeStyle = '#000'; sCtx.lineWidth = 1.5;
+        sCtx.strokeRect(b.x+2,b.y+2,bW-4,bH-4);
+    }
+    for(let i=sParts.length-1;i>=0;i--) {
+        const p=sParts[i]; p.x+=p.vx; p.y+=p.vy; p.life-=0.04;
+        if(p.life<=0){sParts.splice(i,1);continue;}
+        sCtx.globalAlpha=p.life; sCtx.fillStyle=p.color; sCtx.shadowColor=p.color; sCtx.shadowBlur=8;
+        sCtx.fillRect(p.x,p.y,3,3);
+    }
+    sCtx.globalAlpha = 1; sCtx.shadowBlur = 0;
+}
+
+function sbCollide() {
+    for(let c=0;c<bCol;c++) for(let r=0;r<bRow;r++) {
+        const b=bricks[c][r]; if(!b.status) continue;
+        if(bal.x>b.x && bal.x<b.x+bW && bal.y>b.y && bal.y<b.y+bH) {
+            bal.dy=-bal.dy; b.status=0; sScore+=10; sbUpdateHUD();
+            sbSpawn(b.x+bW/2,b.y+bH/2,b.color);
+            if(sScore===bRow*bCol*10) { sActive=false; sWin.style.display='flex'; }
+        }
+    }
+}
+
+function sbUpdate() {
+    if(!sActive) return;
+    sbCollide();
+    if(bal.x+bal.dx>sW-bal.r||bal.x+bal.dx<bal.r) bal.dx=-bal.dx;
+    if(bal.y+bal.dy<bal.r) bal.dy=-bal.dy;
+    else if(bal.y+bal.dy>pad.y-bal.r) {
+        if(bal.x>pad.x&&bal.x<pad.x+pad.w) {
+            bal.dy=-bal.dy;
+            bal.dx=(bal.x-(pad.x+pad.w/2))*0.15;
+            if(Math.abs(bal.dy)<sH*0.015) bal.dy*=1.02;
+        } else if(bal.y>sH) {
+            sLives--; sbUpdateHUD();
+            if(!sLives){sActive=false;sOver.style.display='flex';} else sbResetBall();
+        }
+    }
+    bal.x+=bal.dx; bal.y+=bal.dy;
+    sbDraw();
+    sAnimId=requestAnimationFrame(sbUpdate);
+}
+
+sCont.addEventListener('mousemove',(e)=>{
+    if(!sActive) return;
+    const rx=e.clientX-sCont.getBoundingClientRect().left;
+    if(rx>0&&rx<sW) { pad.x=rx-pad.w/2; if(pad.x<0)pad.x=0; if(pad.x+pad.w>sW)pad.x=sW-pad.w; }
+});
+document.getElementById('sb-startBtn')!.addEventListener('click',sbInit);
+document.getElementById('sb-restartBtn')!.addEventListener('click',sbInit);
+document.getElementById('sb-nextBtn')!.addEventListener('click',sbInit);
+</script>
+
+<style>
+    @keyframes sb-glitch {
+        0% { text-shadow: 0.05em 0 0 #ff00ff, -0.05em -0.025em 0 #00ffff; }
+        14% { text-shadow: 0.05em 0 0 #ff00ff, -0.05em -0.025em 0 #00ffff; }
+        15% { text-shadow: -0.05em -0.025em 0 #ff00ff, 0.025em 0.025em 0 #00ffff; }
+        49% { text-shadow: -0.05em -0.025em 0 #ff00ff, 0.025em 0.025em 0 #00ffff; }
+        50% { text-shadow: 0.025em 0.05em 0 #ff00ff, 0.05em 0 0 #00ffff; }
+        100% { text-shadow: -0.025em 0 0 #ff00ff, -0.025em -0.025em 0 #00ffff; }
+    }
+    #sb-startBtn:hover {
+        background: #ffff00 !important;
+        color: #000 !important;
+        box-shadow: 0 0 30px #ffff00, inset 0 0 10px #fff !important;
+    }
+    #sb-restartBtn:hover, #sb-nextBtn:hover {
+        filter: brightness(1.5);
+    }
+</style>

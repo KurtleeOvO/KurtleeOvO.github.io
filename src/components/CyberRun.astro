@@ -1,0 +1,218 @@
+<div id="cyber-game-wrapper" style="width:100%;position:relative;aspect-ratio:4/3;max-height:500px;">
+        <div id="cyber-gameContainer" style="width:100%;height:100%;position:relative;background:#000;border:2px solid #00f3ff;box-shadow:0 0 20px rgba(0,243,255,0.3),inset 0 0 20px rgba(0,243,255,0.1);overflow:hidden;">
+            <div class="cyber-scanlines" style="position:absolute;top:0;left:0;width:100%;height:100%;background:repeating-linear-gradient(to bottom,transparent,transparent 2px,rgba(0,0,0,0.15) 2px,rgba(0,0,0,0.15) 4px);pointer-events:none;z-index:10;"></div>
+
+            <div id="cyber-startScreen" style="position:absolute;top:0;left:0;width:100%;height:100%;display:flex;flex-direction:column;justify-content:center;align-items:center;background:rgba(5,5,16,0.9);z-index:20;transition:opacity 0.5s ease-out;">
+                <canvas id="cyber-idleCanvas" style="position:absolute;top:0;left:0;width:100%;height:100%;z-index:-1;opacity:0.5;"></canvas>
+                <div class="cyber-glitch" data-text="CYBER RUN" style="font-size:clamp(24px,5vw,60px);font-weight:bold;color:#fff;text-transform:uppercase;position:relative;text-shadow:0.05em 0 0 #ff007f,-0.05em -0.025em 0 #00f3ff;animation:cyber-glitch 1s infinite;margin-bottom:30px;letter-spacing:5px;font-family:'Press Start 2P','Courier New',monospace;">CYBER RUN</div>
+                <button id="cyber-startBtn" style="padding:12px 32px;font-size:clamp(12px,2vw,18px);font-family:'Press Start 2P','Courier New',monospace;font-weight:bold;color:#00f3ff;background:transparent;border:2px solid #00f3ff;cursor:pointer;box-shadow:0 0 10px rgba(0,243,255,0.5),inset 0 0 10px rgba(0,243,255,0.2);transition:all 0.3s;animation:cyber-pulse 2s infinite;">INITIALIZE</button>
+            </div>
+
+            <div id="cyber-ui" style="position:absolute;top:16px;left:16px;font-size:clamp(12px,2vw,20px);color:#00f3ff;text-shadow:0 0 10px #00f3ff;z-index:5;display:none;font-family:'Press Start 2P',monospace;">DATA: <span id="cyber-score">0</span> MB</div>
+
+            <canvas id="cyber-gameCanvas" style="display:none;width:100%;height:100%;"></canvas>
+
+            <div id="cyber-gameOverScreen" style="position:absolute;top:0;left:0;width:100%;height:100%;display:none;flex-direction:column;justify-content:center;align-items:center;background:rgba(255,0,60,0.1);backdrop-filter:blur(2px);z-index:15;">
+                <h2 style="font-size:clamp(20px,4vw,42px);color:#ff007f;text-shadow:0 0 15px #ff007f;margin:0 0 10px;font-family:'Press Start 2P',monospace;">SYSTEM CRASHED</h2>
+                <p style="font-size:clamp(12px,2vw,18px);text-shadow:0 0 5px #fff;color:#fff;font-family:'Press Start 2P',monospace;">收集: <span id="cyber-finalScore">0</span> MB</p>
+                <button id="cyber-restartBtn" style="margin-top:20px;padding:8px 24px;font-size:clamp(10px,1.5vw,16px);color:#ff007f;background:transparent;border:2px solid #ff007f;cursor:pointer;box-shadow:0 0 10px rgba(255,0,127,0.5);font-family:'Press Start 2P',monospace;">REBOOT</button>
+            </div>
+
+            <div id="cyber-controlsTip" style="position:absolute;bottom:12px;width:100%;text-align:center;color:#aaa;font-size:clamp(9px,1.2vw,12px);font-family:'Press Start 2P',monospace;display:none;">SPACE / UP 跳跃</div>
+        </div>
+    </div>
+
+<script>
+const container = document.getElementById('cyber-gameContainer') as HTMLElement;
+const wrapper = document.getElementById('cyber-game-wrapper') as HTMLElement;
+const idleCanvas = document.getElementById('cyber-idleCanvas') as HTMLCanvasElement;
+const idleCtx = idleCanvas.getContext('2d')!;
+const canvas = document.getElementById('cyber-gameCanvas') as HTMLCanvasElement;
+const ctx = canvas.getContext('2d')!;
+const startScreen = document.getElementById('cyber-startScreen') as HTMLElement;
+const gameOverScreen = document.getElementById('cyber-gameOverScreen') as HTMLElement;
+const ui = document.getElementById('cyber-ui') as HTMLElement;
+const controlsTip = document.getElementById('cyber-controlsTip') as HTMLElement;
+const scoreEl = document.getElementById('cyber-score') as HTMLElement;
+const finalScoreEl = document.getElementById('cyber-finalScore') as HTMLElement;
+
+let W = 800, H = 450;
+function resizeCanvas() {
+    const rect = container.getBoundingClientRect();
+    W = rect.width;
+    H = rect.height;
+    canvas.width = W;
+    canvas.height = H;
+    idleCanvas.width = W;
+    idleCanvas.height = H;
+}
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
+
+let particles: {x:number;y:number;speed:number;size:number}[] = [];
+for (let i = 0; i < 40; i++) {
+    particles.push({ x: Math.random()*W, y: Math.random()*H, speed: Math.random()*2+0.5, size: Math.random()*3+1 });
+}
+let idleAnimId: number;
+function drawIdle() {
+    idleCtx.clearRect(0, 0, W, H);
+    idleCtx.fillStyle = '#00f3ff';
+    idleCtx.shadowBlur = 10;
+    idleCtx.shadowColor = '#00f3ff';
+    for (const p of particles) {
+        idleCtx.fillRect(p.x, p.y, p.size, p.size);
+        p.y -= p.speed;
+        if (p.y < -10) { p.y = H; p.x = Math.random()*W; }
+    }
+    idleAnimId = requestAnimationFrame(drawIdle);
+}
+drawIdle();
+
+let gameActive = false, score = 0, gameSpeed = 5, frame = 0, animId = 0;
+
+const groundY = 0.78;
+const player = {
+    x: 0, y: 0, w: 0, h: 0,
+    dy: 0, gravity: 0.6, jumpPower: -12, isJumping: false,
+    groundY: 0
+};
+function resetPlayer() {
+    player.w = W * 0.04;
+    player.h = H * 0.07;
+    player.x = W * 0.06;
+    player.groundY = H * groundY - player.h;
+    player.y = player.groundY;
+    player.dy = 0;
+    player.isJumping = false;
+}
+resetPlayer();
+
+let obstacles: {x:number;y:number;w:number;h:number}[] = [];
+
+function spawnObstacle() {
+    const w = Math.random()*W*0.03 + W*0.02;
+    const h = Math.random()*H*0.08 + H*0.06;
+    obstacles.push({ x: W, y: H*groundY - h, w, h });
+}
+
+function draw() {
+    if (!gameActive) return;
+    ctx.fillStyle = '#050510';
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.strokeStyle = 'rgba(0,243,255,0.3)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, H*groundY);
+    ctx.lineTo(W, H*groundY);
+    ctx.stroke();
+
+    ctx.fillStyle = 'rgba(0,243,255,0.2)';
+    for (let i = 0; i < 8; i++) {
+        const px = (frame*2 + i*80) % W;
+        ctx.fillRect(W - px, H*groundY + 10, 4, 4);
+    }
+
+    player.dy += player.gravity;
+    player.y += player.dy;
+    if (player.y >= player.groundY) { player.y = player.groundY; player.dy = 0; player.isJumping = false; }
+
+    ctx.shadowBlur = 12;
+    ctx.shadowColor = '#00f3ff';
+    ctx.fillStyle = '#00f3ff';
+    ctx.fillRect(player.x, player.y, player.w, player.h);
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(player.x + player.w*0.3, player.y + player.h*0.3, player.w*0.4, player.h*0.4);
+
+    if (frame % (Math.floor(Math.random()*50)+70) === 0) spawnObstacle();
+
+    for (let i = obstacles.length - 1; i >= 0; i--) {
+        const o = obstacles[i];
+        o.x -= gameSpeed;
+        ctx.shadowBlur = 15;
+        ctx.shadowColor = '#ff007f';
+        ctx.fillStyle = '#ff007f';
+        ctx.fillRect(o.x, o.y, o.w, o.h);
+
+        if (player.x < o.x+o.w && player.x+player.w > o.x && player.y < o.y+o.h && player.y+player.h > o.y) {
+            endGame();
+            return;
+        }
+        if (o.x + o.w < 0) {
+            obstacles.splice(i, 1);
+            score += 10;
+            scoreEl.textContent = String(score);
+            if (score % 50 === 0) gameSpeed += 0.5;
+        }
+    }
+
+    if (frame % 10 === 0) { score += 1; scoreEl.textContent = String(score); }
+    frame++;
+    animId = requestAnimationFrame(draw);
+}
+
+function jump() {
+    if (gameActive && !player.isJumping) {
+        player.dy = player.jumpPower;
+        player.isJumping = true;
+    }
+}
+
+function startGame() {
+    cancelAnimationFrame(idleAnimId);
+    resizeCanvas();
+    resetPlayer();
+    startScreen.style.display = 'none';
+    gameOverScreen.style.display = 'none';
+    canvas.style.display = 'block';
+    ui.style.display = 'block';
+    controlsTip.style.display = 'block';
+    score = 0; gameSpeed = 6; frame = 0; obstacles = [];
+    scoreEl.textContent = '0';
+    gameActive = true;
+    draw();
+}
+
+function endGame() {
+    gameActive = false;
+    cancelAnimationFrame(animId);
+    finalScoreEl.textContent = String(score);
+    gameOverScreen.style.display = 'flex';
+    controlsTip.style.display = 'none';
+}
+
+document.addEventListener('keydown', (e) => {
+    if ((e.code === 'Space' || e.code === 'ArrowUp')) {
+        if (gameActive) { e.preventDefault(); jump(); }
+    }
+});
+canvas.addEventListener('mousedown', jump);
+canvas.addEventListener('touchstart', (e) => { e.preventDefault(); jump(); });
+document.getElementById('cyber-startBtn')!.addEventListener('click', startGame);
+document.getElementById('cyber-restartBtn')!.addEventListener('click', startGame);
+</script>
+
+<style>
+    @keyframes cyber-glitch {
+        0% { text-shadow: 0.05em 0 0 #ff007f, -0.05em -0.025em 0 #00f3ff; }
+        15% { text-shadow: -0.05em -0.025em 0 #ff007f, 0.025em 0.025em 0 #00f3ff; }
+        49% { text-shadow: -0.05em -0.025em 0 #ff007f, 0.025em 0.025em 0 #00f3ff; }
+        50% { text-shadow: 0.025em 0.05em 0 #ff007f, 0.05em 0 0 #00f3ff; }
+        99% { text-shadow: 0.025em 0.05em 0 #ff007f, 0.05em 0 0 #00f3ff; }
+        100% { text-shadow: -0.025em 0 0 #ff007f, -0.025em -0.025em 0 #00f3ff; }
+    }
+    @keyframes cyber-pulse {
+        0% { opacity: 0.8; }
+        50% { opacity: 1; text-shadow: 0 0 10px #fff; }
+        100% { opacity: 0.8; }
+    }
+    #cyber-startBtn:hover {
+        background: #00f3ff !important;
+        color: #000 !important;
+        box-shadow: 0 0 30px #00f3ff, inset 0 0 20px #fff !important;
+    }
+    #cyber-restartBtn:hover {
+        background: #ff007f !important;
+        color: #fff !important;
+    }
+</style>

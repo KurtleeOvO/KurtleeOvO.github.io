@@ -1,0 +1,156 @@
+---
+import CyberRun from "./CyberRun.astro";
+import HoverDrone from "./HoverDrone.astro";
+import NeonSlash from "./NeonSlash.astro";
+import SystemBreach from "./SystemBreach.astro";
+import TerminalOverride from "./TerminalOverride.astro";
+---
+
+<div class="card-base px-6 py-5 mb-4 overflow-hidden">
+    <div class="flex items-center justify-between mb-3">
+        <div class="flex items-center gap-3">
+            <button id="gc-prev" class="gc-arrow" aria-label="上一个游戏">&#9664;</button>
+            <div id="gc-title" class="text-2xl font-bold tracking-tight text-black/50 dark:text-white/50 transition-all">赛博狂奔 CYBER RUN</div>
+            <button id="gc-next" class="gc-arrow" aria-label="下一个游戏">&#9654;</button>
+        </div>
+        <div id="gc-dots" class="flex items-center gap-2">
+            <div class="gc-dot gc-dot-active" data-index="0"></div>
+            <div class="gc-dot" data-index="1"></div>
+            <div class="gc-dot" data-index="2"></div>
+            <div class="gc-dot" data-index="3"></div>
+            <div class="gc-dot" data-index="4"></div>
+        </div>
+    </div>
+    <div id="gc-track" style="position:relative;overflow:hidden;">
+        <div id="gc-slider" style="display:flex;transition:transform 0.4s ease;width:500%;">
+            <div style="width:20%;flex-shrink:0;">
+                <CyberRun />
+            </div>
+            <div style="width:20%;flex-shrink:0;">
+                <SystemBreach />
+            </div>
+            <div style="width:20%;flex-shrink:0;">
+                <HoverDrone />
+            </div>
+            <div style="width:20%;flex-shrink:0;">
+                <TerminalOverride />
+            </div>
+            <div style="width:20%;flex-shrink:0;">
+                <NeonSlash />
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const titles = ['赛博狂奔 CYBER RUN', '系统骇入 SYSTEM BREACH', '悬浮骇客 HOVER DRONE', '解码 TERMINAL OVERRIDE', '霓虹光刃 NEON SLASH'];
+const total = 5;
+let idx = 0;
+let startX = 0;
+let dragging = false;
+
+const slider = document.getElementById('gc-slider') as HTMLElement;
+const title = document.getElementById('gc-title') as HTMLElement;
+const dots = document.querySelectorAll('.gc-dot') as NodeListOf<HTMLElement>;
+const track = document.getElementById('gc-track') as HTMLElement;
+const carousel = track.closest('.card-base') as HTMLElement;
+
+const pct = (100 / total);
+
+let autoTimer = 0;
+function startAuto() {
+    stopAuto();
+    autoTimer = window.setInterval(() => go(idx + 1), 5000);
+}
+function stopAuto() {
+    if (autoTimer) { clearInterval(autoTimer); autoTimer = 0; }
+}
+
+carousel.addEventListener('mouseenter', stopAuto);
+carousel.addEventListener('mouseleave', startAuto);
+
+startAuto();
+
+function go(i: number) {
+    idx = ((i % total) + total) % total;
+    slider.style.transform = `translateX(-${idx * pct}%)`;
+    title.textContent = titles[idx];
+    dots.forEach((d, di) => {
+        d.classList.toggle('gc-dot-active', di === idx);
+        d.classList.toggle('gc-dot-inactive', di !== idx);
+    });
+}
+
+document.getElementById('gc-prev')!.addEventListener('click', () => go(idx - 1));
+document.getElementById('gc-next')!.addEventListener('click', () => go(idx + 1));
+dots.forEach(d => d.addEventListener('click', () => go(Number(d.dataset.index))));
+
+slider.addEventListener('touchstart', (e) => {
+    startX = e.touches[0].clientX;
+    dragging = true;
+}, { passive: true });
+
+slider.addEventListener('touchmove', (e) => {
+    if (!dragging) return;
+}, { passive: true });
+
+slider.addEventListener('touchend', (e) => {
+    if (!dragging) return;
+    dragging = false;
+    const diff = startX - e.changedTouches[0].clientX;
+    if (Math.abs(diff) > 50) {
+        go(diff > 0 ? idx + 1 : idx - 1);
+    }
+}, { passive: true });
+
+let mStartX = 0;
+let mDragging = false;
+slider.addEventListener('mousedown', (e) => {
+    mStartX = e.clientX;
+    mDragging = true;
+});
+slider.addEventListener('mouseup', (e) => {
+    if (!mDragging) return;
+    mDragging = false;
+    const diff = mStartX - e.clientX;
+    if (Math.abs(diff) > 50) {
+        go(diff > 0 ? idx + 1 : idx - 1);
+    }
+});
+slider.addEventListener('mouseleave', () => { mDragging = false; });
+</script>
+
+<style>
+    .gc-arrow {
+        background: none;
+        border: 2px solid var(--line-color);
+        color: var(--btn-content);
+        width: 28px;
+        height: 28px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        font-size: 12px;
+        transition: all 0.2s;
+    }
+    .gc-arrow:hover {
+        background: var(--btn-plain-bg-hover);
+        color: var(--primary);
+    }
+    .gc-dot {
+        width: 10px;
+        height: 10px;
+        cursor: pointer;
+        transition: all 0.3s;
+    }
+    .gc-dot-active {
+        background: var(--primary);
+    }
+    .gc-dot-inactive {
+        background: var(--line-color);
+    }
+    .gc-dot-inactive:hover {
+        background: var(--btn-content);
+    }
+</style>
